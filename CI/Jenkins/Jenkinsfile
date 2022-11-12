@@ -1,0 +1,320 @@
+#!groovy​
+@Library('email-share-lib@master')_
+// func from sharelibrary
+def toemail = new org.devops.toemail()
+def FY_MODULENAME
+def FY_MODULEVERSION
+def L_MODULEVERSION
+def DEPLOY_PATH = '/gpfs/fuyun'
+def FY_DEPLOY_PATH = "${DEPLOY_PATH}/fy_modules/physics"
+def NEXT_STAGE
+// def TMP = '/tmp'
+// currentBuild.previousBuild.result
+pipeline {
+    agent {label "master"}
+    environment {
+        COMMITID = "${sh(script:'git rev-parse HEAD', returnStdout: true).trim()}"
+        COMMITMES = "${sh(script:'git log --pretty=format:"%s" $COMMITMID -1', returnStdout: true).trim()}"
+        KEYWORDS = "CHECK BUILD REBUILD TEST DEPLOY"
+        KEYWORD =  "${sh(script:"echo $COMMITMES |cut -d '-' -f1", returnStdout: true).trim()}"            
+    }
+    options {
+        timestamps() //日志会有时间
+        // skipDefaultCheckout() //删除隐式checkout scm语句
+        disableConcurrentBuilds()//禁止并行
+        timeout(time:1, unit:'HOURS')
+    }
+    stages {
+        stage('Initialization') {
+            agent { label "master" }
+            environment{
+                NUM = "${sh(script:"echo ${env.COMMITMES}|grep -o '-'|wc -l", returnStdout: true).trim()}"
+                DEFAULT_TOOLCHAINNAME = 'gompi'
+                DEFAULT_TOOLCHAINVERSION = '2019b'
+            }
+            stages{
+                stage('CHECK KEYWORD'){
+                  steps {
+                    checkout([$class: 'GitSCM', 
+                            branches: [[name: '*/develop']], 
+                            doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], 
+                            userRemoteConfigs: [[credentialsId: 'gitee-liuxj', url: 'https://gitee.com/fy_lxj/python-api']]])
+                    script{
+                        sh 'chmod +x ./scripts/check_initiallzation.sh'
+                        sh './scripts/check_initiallzation.sh >flagvalue  '
+                        flag = readFile('flagvalue').trim()
+                        sh 'rm flagvalue'
+                        echo "${flag}"
+                        if (flag == "0"){
+                            currentBuild.result = "ABORTED"
+                            println 'the keyword is not in the commit message '
+                            return 0
+                        }
+                        else{
+                            currentBuild.result = "SUCCESS"
+                        }
+                        echo "KEYWORD=${env.KEYWORD}"
+                        echo "RESULT: ${currentBuild.result}"
+                        echo "RESULT: ${currentBuild.currentResult}"
+                    }
+                  }
+                }
+
+                stage('COMMIT-M VALIDATE '){
+                    when { expression {
+                        currentBuild.result == 'SUCCESS'  
+                        }  
+                    }
+                    steps {
+                        script {
+                            echo "NUM=${env.NUM}"
+                            if (NUM == "2"|| NUM == "4"){
+                                if (NUM == "4"){
+                                    MODULENAME = "${sh(script:"echo ${env.COMMITMES}|cut -d '-' -f2", returnStdout: true).trim()}"
+                                    MODULEVERSION = "${sh(script:"echo ${env.COMMITMES}|cut -d '-' -f3", returnStdout: true).trim()}"
+                                    TOOLCHAINNAME = "${sh(script:"echo ${env.COMMITMES}|cut -d '-' -f4", returnStdout: true).trim()}"
+                                    TOOLCHAINVERSION = "${sh(script:"echo ${env.COMMITMES}|cut -d '-' -f5", returnStdout: true).trim()}"
+                                }
+                                if (NUM == "2"){
+                                    MODULENAME = "${sh(script:"echo ${env.COMMITMES}|cut -d '-' -f2", returnStdout: true).trim()}"
+                                    MODULEVERSION = "${sh(script:"echo ${env.COMMITMES}|cut -d '-' -f3", returnStdout: true).trim()}"
+                                    TOOLCHAINNAME = DEFAULT_TOOLCHAINNAME
+                                    TOOLCHAINVERSION = DEFAULT_TOOLCHAINVERSION
+                                }
+                                L_MODULENAME="${MODULENAME}-${MODULEVERSION}"
+                                L_MODULEVERSION="${MODULENAME}/${MODULEVERSION}"
+                                FY_MODULENAME="${MODULENAME}/${MODULEVERSION}-${TOOLCHAINNAME}-${TOOLCHAINVERSION}"
+                                FY_MODULEVERSION="${MODULENAME}-${MODULEVERSION}-${TOOLCHAINNAME}-${TOOLCHAINVERSION}"
+                                FY_MODULEFILE="${FY_MODULEVERSION}.yaml"
+                                println('the name of module  is '+FY_MODULENAME)
+                                println('the version of module  is '+FY_MODULEVERSION)
+                                echo "KEYWORD=${env.KEYWORD}"
+                                echo "KEYWORD=${MODULEVERSION}"
+
+                                println("the module name is "+MODULENAME)
+                            }
+                            else{
+                                currentBuild.result = "FAILURE"
+                                println 'the commit is not keyword-modulename-moduleversion-toolchainname-toolchainversion,please commit the correct format'
+                                return 
+                            }
+                            echo "RESULT: ${currentBuild.result}"
+                            echo "RESULT: ${currentBuild.currentResult}"
+
+                        }
+                    }
+                }
+            
+            }
+
+        }
+        stage('BUILD and DEPLOY'){
+            agent {
+                docker {
+                     // image 'fylab:v0.0.1-imas,Here just need a OS enviroment which is the same as login110'
+                    // image 'fylab-uid-fydev:v0.1'
+                    image 'fyos-centos7:v0.0.1'
+                    // args '-u 1000:1000 --privileged'
+                    args '-v /gpfs/fuyun:/gpfs/fuyun'
+                }
+            }
+            stages{
+                stage('CHECK BUILD/REBUILD') {
+                    // BUILD前加上检测部署目录
+                    stages{
+                        stage('CHECK BUILD'){
+                            when { expression {
+                            currentBuild.result == 'SUCCESS'   && env.KEYWORD == 'BUILD' }
+                            }
+                            steps{
+                                script{
+                                    println('the name and version of module  is '+FY_MODULENAME)
+                                    echo"the name and version of module  is ${FY_MODULENAME}"
+                                    sh 'echo "the name and version of module  is '+FY_MODULENAME+' "'
+                                    // println('the version of module  is '+FY_MODULEVERSION)
+                                }
+                                script{
+                                    sh 'echo "the name and version of module  is '+FY_MODULENAME+' "'
+                                    sh 'ls -lh '+DEPLOY_PATH+'  '
+                                    // sh """echo "the name and version of module  is '+FY_MODULENAME+'"
+                                    //         echo "the name and version of module  is '+FY_MODULEVERSION+' " """
+                                    // sh 'chmod +x ./scripts/check_modulefile_exit.sh'
+                                    sh """
+                                        echo "the name and version of module  is ${FY_MODULENAME} "
+                                        ls -lh ${DEPLOY_PATH}
+                                        touch ./scripts/ ${FY_MODULEVERSION}.log
+                                        chmod 777 ./scripts/ ${FY_MODULEVERSION}.log
+                                        su  fydev  -c ' whoami  && 
+                                        # module use /fuyun/modules/all &&
+                                        source /usr/share/lmod/lmod/init/bash && 
+                                        module use ${DEPLOY_PATH}/modules/all &&
+                                        module load Python/3.7.4-GCCcore-8.3.0 && 
+                                        module list &&
+                                        echo "the name and version of module  is ${FY_MODULENAME} " &&
+                                        python ./scripts/modulefile_exit.py ${FY_MODULENAME} ${FY_MODULEVERSION} > /tmp/flag_modulefile &&
+                                        chmod 777 /tmp/flag_modulefile 
+                                        '
+                                        """
+                                    sh 'cp /tmp/flag_modulefile  ${WORKSPACE}/'
+                                    // flagvalue_json = "${TMP}/flagvalue_file"
+                                    flagvalue = readFile("flag_modulefile").trim()
+                                    echo "${flagvalue}"
+                                    if (flagvalue == "True"){
+                                        echo "the ${FY_MODULENAME} is exited"
+                                        echo "the path of fy_deploy  is ${FY_DEPLOY_PATH} and ${FY_MODULEFILE} "
+                                        sh """
+                                        python ./scripts/file_exit.py ${FY_DEPLOY_PATH} ${FY_MODULEFILE} >/tmp/flag_fyfile 
+                                        """
+                                        sh 'chmod 777 /tmp/flag_fyfile'
+                                        sh 'cp /tmp/flag_fyfile  ${WORKSPACE}/'
+                                        fy_flagvalue = readFile("flag_fyfile").trim()
+                                        if (fy_flagvalue == "True"){
+                                            currentBuild.result = 'ABORTED'
+                                            return 0
+                                        }
+                                        else{
+                                            echo "the ${FY_MODULEFILE} is not exit ,and need to deploy"
+                                            NEXT_STAGE = 'FY_DEPLOY'
+                                            currentBuild.result = 'SUCCESS'
+                                        }
+                                    }
+                                    else{
+                                        echo "the ${FY_MODULENAME}  is not exit ,and need to build"
+                                        NEXT_STAGE = 'BUILD' 
+                                        currentBuild.result = 'SUCCESS'
+                                    }
+                                }
+                            }
+                        }
+                        stage('CHECK REBUILD'){
+                            when { expression {
+                                currentBuild.result == 'SUCCESS'   && env.KEYWORD == 'REBUILD' }
+                            }
+                            steps{
+                                script{
+                                    echo "the ${env.KEYWORD} is REBUILD,dot need to check ,and directly  to build"
+                                    NEXT_STAGE = 'BUILD' 
+                                    currentBuild.result = 'SUCCESS'                                   
+                                }
+                            }                       
+                        }
+                    }    
+                }
+                stage('Build'){
+                    when { expression {
+                    currentBuild.result == 'SUCCESS'   && NEXT_STAGE == 'BUILD' }
+                    }
+                    steps{
+                        script{
+                            echo"now is build stage"
+                            sh """
+                                chmod +x ./scripts/build-install.sh
+                            """
+                            sh """
+                                echo "the name ebfile  is ${FY_MODULENAME}.eb "
+                                yum install -y libX11 libX11-devel libX11-common
+                                su  fydev  -c ' whoami  && 
+                                source /usr/share/lmod/lmod/init/bash && 
+                                module use /gpfs/fuyun/modules/all 
+                                module load EasyBuild/4.3.2 && 
+                                echo "hello world" &&
+                                eb -Dr  --robot-paths=./easybuild/easyconfigs:/gpfs//fuyun/software/EasyBuild/4.3.2/easybuild/easyconfigs  ${FY_MODULEVERSION}.eb  &&
+                                eb -lr --rebuild   --robot-paths=./easybuild/easyconfigs:/gpfs/fuyun/software/EasyBuild/4.3.2/easybuild/easyconfigs ${FY_MODULEVERSION}.eb '
+                            """
+                            NEXT_STAGE = 'DEPLOY'
+                        }
+                    }                  
+
+                }
+                stage('Module_Deploy'){
+                    when { expression {
+                    currentBuild.result == 'SUCCESS'   && NEXT_STAGE == 'DEPLOY' }
+                    }
+                    steps{
+                        script{
+                            echo"now is module deploy stage"
+                            sh """
+                                chmod +x ./scripts/deploy.sh
+                            """
+                            sh """
+                                echo "the name ebfile  is ${FY_MODULENAME}.eb "
+                                su  fydev  -c ' whoami  && 
+                                source /usr/share/lmod/lmod/init/bash && 
+                                module use /gpfs/fuyun/modules/all 
+                                module load EasyBuild/4.3.2 && 
+                                export EASYBUILD_PREFIX=/gpfs/fuyun &&
+                                echo "hello world" &&
+                                eb -Dr  --robot-paths=./easybuild/easyconfigs:/gpfs/fuyun/software/EasyBuild/4.3.2/easybuild/easyconfigs  ${FY_MODULEVERSION}.eb  &&
+                                eb -lr --rebuild   --robot-paths=./easybuild/easyconfigs:/gpfs/fuyun/software/EasyBuild/4.3.2/easybuild/easyconfigs ${FY_MODULEVERSION}.eb '
+                            """
+                            NEXT_STAGE = 'FY_DEPLOY'
+                        }
+                    }    
+
+                }
+                stage('FY_Deploy'){
+                    when { expression {
+                    currentBuild.result == 'SUCCESS'   && NEXT_STAGE == 'FY_DEPLOY' }
+                    }
+                    steps{
+                        script{
+                            MODULEFILE_TMP="${FY_MODULEVERSION}.yaml"
+                            // FY_MODULEFILE="${FY_MODULEVERSION}.yaml
+                            sh """
+                            su  fydev  -c 'whoami  && 
+                            source /usr/share/lmod/lmod/init/bash && 
+                            module use ${DEPLOY_PATH}/modules/all &&
+                            module load Python/3.7.4-GCCcore-8.3.0 &&
+                            python ./scripts/fy_deploy.py ${DEPLOY_PATH}/fy_modules/physics   ${WORKSPACE}/fy_modules/physics ${MODULEFILE_TMP} ${FY_MODULEVERSION} ${FY_MODULENAME} '
+                            """
+                            echo"now is fy_module deploy stage"
+                        }
+                    }    
+                    
+                }
+            }
+        }
+
+    }
+    post {
+        always {
+            script {
+                println('always')
+                // toemail.Email("流水线成功","lxj@ipp.ac.cn")
+                // toemail.Email("流水线成功",userEmail)
+            }
+        }
+        success {
+            script {
+                println("sucess")
+                currentBuild.description += "\n构建成功"
+                toemail.Email("流水线成功","lxj@ipp.ac.cn")
+            }
+            // emailext{
+            //     subject:'hello',
+            //     // subject:'{ENV, var="JOB_NAME"}-第${BUILD_NUMBER}次构建日志',
+            //     // subject: "SUCCESSFUL: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+            //     // body: """<p>SUCCESSFUL: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':</p>
+            //     //     <p>
+            //     //     Check console output at "<a href="${env.BUILD_URL}">${env.JOB_NAME} [${env.BUILD_NUMBER}]</a>"
+            //     //     </p>""",
+            //     to:'lxj@ipp.ac.cn',
+            //     from:'562817610@qq.com'
+            // }
+        }
+        failure {
+            script {
+                println("failure")
+                currentBuild.description += "\n 构建失败"
+                toemail.Email("构建失败","lxj@ipp.ac.cn")
+            }
+        }
+        aborted {
+            script {
+                println("aborted")
+                currentBuild.description += "\n commit信息不符合构建要求，请检查您的初始条件"
+                toemail.Email("构建取消","lxj@ipp.ac.cn")
+            }
+        }
+    }
+}

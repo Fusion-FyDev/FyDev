@@ -1,0 +1,43 @@
+@CompileStatic
+pipeline {
+    agent {
+        docker {
+            image 'fydev:latest'
+        }
+    }
+    stages {
+        stage('test') {
+            steps {
+                if fileExists 'hello.eb':
+                    echo "ok"
+                else :
+                    echo "the file is not exist,skip this step"
+            }
+        }
+
+        stage('build') {
+            steps {
+                sh '''tar czf  hello-cmake-1.0.tar.gz  hello-cmake-1.0
+                    ls -lh /fuyun
+                    su  fydev  -c \' whoami  && \\
+                    source /usr/share/lmod/lmod/init/bash && \\
+                     module load  EasyBuild/4.2.0 && \\
+                    eb hello.eb -lr  && \\
+                    module list && \\
+                    ls -l \''''
+            }
+        }
+
+        stage('test:functional') {
+            steps {
+                sh '''su  fydev  -c \' whoami  && \\
+                    source /usr/share/lmod/lmod/init/bash && \\
+                    module use /fuyun/modules/phys &&\\
+                    echo $MODULEPATH && \\
+                    module load Hello  && \\
+                    module list &&\\
+                    hello\''''
+            }
+        }
+    }
+}

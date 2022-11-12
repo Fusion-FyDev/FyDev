@@ -1,0 +1,14 @@
+gitee:1.1.9
+generic-webhook-trigger:latest
+folder-auth:latest
+timestamper:latest
+pipeline-editor:latest
+gradle:latest
+ant:latest
+pam-auth:latest
+ldap:latest
+email-ext:latest
+localization-zh-cn:latest
+git:latest
+ws-cleanup
+subversion

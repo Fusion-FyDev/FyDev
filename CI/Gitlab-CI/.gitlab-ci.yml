@@ -1,0 +1,302 @@
+default:
+  tags:
+    - fooyun
+  before_script:
+    - echo "Execute this script in all jobs that don't already have a before_script section."
+    - echo `whoami`
+    - source /usr/share/lmod/lmod/init/bash && module use /gpfs/fuyun/modules/all && echo $MODULEPATH && module load FyLab/2020a-foss-2020a && module load EasyBuild/4.3.2
+    - echo `which python`
+    - python --version
+    - export PYTHONPATH="/gpfs/fuyun/software/SpDB/python":"/gpfs/fuyun/software/FyBuild/python":$PYTHONPATH
+
+variables:
+  PYTHONDONTWRITEBYTECODE: 1
+stages:
+- initialization
+- module-check
+- ebfiles-check
+- dependlist
+- fetch-sources 
+- build
+- try-deploy
+- test
+- deploy
+
+initialization:
+  stage: initialization
+  tags:
+    - fooyun
+  script:
+    - COMMITID=`git rev-parse HEAD`
+    - COMMITMES=`git log --pretty=format:"%s" $COMMITMID -1`
+    # - echo "COMMITID=`git rev-parse HEAD`" >> init.env
+    # - echo "COMMITMES=`git log --pretty=format:"%s" $COMMITMID -1` " >> init.env
+    - echo $COMMITID
+    - echo $COMMITME
+    - rm -rf temple.yaml
+    - touch temple.yaml
+    - tmplefile=$CI_PROJECT_DIR/temple.yaml 
+    - echo $tmplefile
+    - python /gpfs/fuyun/software/FyBuild/ci-scripts/init-StandardModule.py $COMMITMES $tmplefile
+    - ls -l 
+    - cat  /gpfs/fuyun/software/FyBuild/ci-scripts/init-StandardModule.py
+  artifacts:
+    # reports:
+    #   dotenv: init.env
+    paths:
+      - temple.yaml
+    
+   
+module-check:
+  stage: module-check
+  allow_failure: true
+  tags:
+    - fooyun
+  script: 
+    - echo "$COMMITID"
+    - echo "$COMMITMES"
+    - echo "$FULLMODULENAME"
+    - tmplefile=$CI_PROJECT_DIR/temple.yaml
+    - cat  /gpfs/fuyun/software/FyBuild/ci-scripts/checkpa.py
+    - python /gpfs/fuyun/software/FyBuild/ci-scripts/checkpa.py  $tmplefile
+    - pwd
+    # - echo $DEPENDENCY_JOB_NAME
+    - echo $CI_JOB_NAME
+    - ls -l
+  dependencies:
+    - initialization
+  needs: ["initialization"]
+  artifacts:
+    paths:
+      # - temple.yaml
+      - ./*temple.yaml
+
+ebfiles-check:
+  stage: ebfiles-check
+  allow_failure: true
+  tags:
+    - fooyun
+  script:
+    # - ls -l 
+    # - if [  -f "Install.txt" ];then echo "KEYWORD="Installed"" >> judge.env;fi
+    - cat $tmplefile
+    - tmplefile=`ls $CI_PROJECT_DIR/*temple.yaml`
+    - cat $tmplefile
+    - echo $tmplefile
+    - if [[ $tmplefile =~ "Non-Install" ]]; then touch non-exsit-ebcheck.yaml; else exit 1; fi
+    - python ebfiles-check.py 
+    # - echo "KEYWORD="Install"" >> judge.env
+    - ls -l
+    - cat $tmplefile
+  dependencies:
+    - module-check 
+  needs: ["module-check"]
+  artifacts:
+    paths:
+      - ./*temple.yaml
+      - ./non-exsit-ebcheck.yaml
+
+try-ebfile:
+  stage: dependlist
+  allow_failure: true
+  tags:
+    - fooyun
+  script:
+    # - ls -l 
+    # - if [  -f "Install.txt" ];then echo "KEYWORD="Install"" >> judge.env;fi
+    - cat $ebfile
+    - ebfile=`ls $CI_PROJECT_DIR/non-exsit-ebcheck.yaml`
+    - cat $ebfile
+    - echo $ebfile
+    - if [[ $ebfile =~ "exsited" ]]; then echo "check the ebfile is ok or not "; else exit 1; fi
+    # - echo "KEYWORD="Install"" >> judge.env
+    - cat $ebfile
+  dependencies:
+    - ebfiles-check 
+  needs: ["ebfiles-check"]
+  artifacts:
+    paths:
+      - ./*temple.yaml
+      - ./non-exsit-ebcheck.yaml
+
+try-toolchain:
+  stage: dependlist
+  allow_failure: true
+  tags:
+    - fooyun
+  script:
+    # - ls -l 
+    # - if [  -f "Install.txt" ];then echo "KEYWORD="Install"" >> judge.env;fi
+    - cat $ebfile
+    - ebfile=`ls $CI_PROJECT_DIR/non-exsit-ebcheck.yaml`
+    - cat $ebfile
+    - echo $ebfile
+    - if [[ $ebfile =~ "non-exsit" ]]; then echo "check the ebfile is  not exit "; else exit 1; fi
+    # - echo "KEYWORD="Install"" >> judge.env
+    - cat $ebfile
+  dependencies:
+    - ebfiles-check 
+  needs: ["ebfiles-check"]
+  artifacts:
+    paths:
+      - ./*temple.yaml
+      - ./non-exsit-ebcheck.yaml
+
+# other-ebfile:
+#   stage: dependlist
+#   # when : manual
+#   tags:
+#     - fooyun
+#   script:
+#     # - ls -l 
+#     # - if [  -f "Install.txt" ];then echo "KEYWORD="Install"" >> judge.env;fi
+#     - cat $ebfile
+#     - ebfile=`ls $CI_PROJECT_DIR/non-exsit-ebcheck.yaml`
+#     - cat $ebfile
+#     - echo $ebfile
+#     - if [[ $ebfile =~ "non-exsit" && $ebfile =~ "exsit" ]]; then echo "you need mauual "; else exit 1; fi
+#     # - echo "KEYWORD="Install"" >> judge.env
+#     - cat $ebfile
+#   dependencies:
+#     - ebcheck 
+#   needs: ["ebcheck"]
+#   rules:
+#     - changes:
+#       - trigger.py
+#     - when: manual
+#     - allow_failure: true
+#   artifacts:
+#     paths:
+#       - ./*temple.yaml
+#       - ./exsit-ebcheck.yaml
+
+fetch-sources:
+  stage: fetch-sources
+  allow_failure: true
+  tags:
+    - fooyun
+  script:
+    # - ls -l 
+    # - if [  -f "Install.txt" ];then echo "KEYWORD="Install"" >> judge.env;fi
+    # - tmplefile=`ls $CI_PROJECT_DIR/*temple.yaml`
+    # - cat $tmplefile
+    # - echo $tmplefile
+    # - if [[  $tmplefile =~ "uninstall"  ]]; then python /gpfs/fuyun/software/FyBuild/ci-scripts/ci-fetchsources.py  $tmplefile ; fi
+    # - echo "KEYWORD="Install"" >> judge.env
+    - echo "collet to fetchsources"
+    - exit 1
+    # - cat $tmplefile
+  dependencies:
+    - try-ebfile
+    - try-toolchain
+    # - other-ebfile
+  needs: 
+    - job: try-ebfile
+    - job: try-toolchain
+    # - job: other-ebfile
+  artifacts:
+    paths:
+      - ./*temple.yaml 
+
+
+build:
+  stage: build
+  allow_failure: true
+  tags:
+    - fooyun
+  script:
+    # - ls -l
+    # - tmplefile=`ls $CI_PROJECT_DIR/*temple.yaml`
+    # - cat $tmplefile
+    # - echo $tmplefile
+    # - if [[   $tmplefile =~ "installed" ]]; then python /gpfs/fuyun/software/FyBuild/ci-scripts/ci-build.py  $tmplefile ; fi
+    # - echo "KEYWORD="Try-deploy"" >> judge.env
+    - cat $tmplefile
+    - exit 1
+  dependencies:
+    - fetch-sources
+  needs: ["fetch-sources"]
+  artifacts:
+    paths:
+      - ./*temple.yaml 
+
+
+non-ebcheck:
+  stage: ebfiles-check
+  allow_failure: true
+  tags:
+    - fooyun
+  script:
+    # - ls -l 
+    # - if [  -f "Install.txt" ];then echo "KEYWORD="Install"" >> judge.env;fi
+    - cat $tmplefile
+    - tmplefile=`ls $CI_PROJECT_DIR/*temple.yaml`
+    - cat $tmplefile
+    - echo $tmplefile
+    - if [[ $tmplefile =~ "installed" ]]; then echo "the software is exist "; else exit 1; fi
+    # - echo "KEYWORD="Install"" >> judge.env
+    - cat $tmplefile
+  dependencies:
+    - module-check 
+  needs: ["module-check"]
+  artifacts:
+    paths:
+      - ./*temple.yaml
+
+
+
+try-deploy:
+  # when: on_failure
+  # allow_failure: true 
+  stage: try-deploy
+  tags:
+    - fooyun
+  script:
+    - echo $CI_JOB_NAME
+    - tmplefile=`ls $CI_PROJECT_DIR/*temple.yaml`
+    - cat $tmplefile
+    - echo $tmplefile
+    # - if [[  $tmplefile =~ "installed"  ]]; then echo "hello deploy" ; else exit 1;fi
+    # - tmplefile=`ls $CI_PROJECT_DIR/*temple.yaml`
+    # - cat $tmplefile
+    - ls /gpfs/fuyun/ModuleRepository/*
+  dependencies:
+    - non-ebcheck
+    - build
+    # - build-uninstall
+    # - build-installed
+  needs: 
+    - job : non-ebcheck
+    - job : build
+
+
+test:
+  # when: on_failure
+  # allow_failure: true 
+  stage: test
+  tags:
+    - fooyun
+  script:
+    - echo "this is test stage"
+  dependencies:
+    - try-deploy
+    # - build-uninstall
+    # - build-installed
+  needs: 
+    - job : try-deploy
+  
+
+deploy:
+  # when: on_failure
+  # allow_failure: true 
+  stage: deploy
+  tags:
+    - fooyun
+  script:
+    - echo "this is deploy stage"
+  dependencies:
+    - test
+  needs: 
+    - job : test
+
+

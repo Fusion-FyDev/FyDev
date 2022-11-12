@@ -1,0 +1,65 @@
+# Built with EasyBuild version 3.9.2 on 2020-04-20_21-27-19
+easyblock = 'ConfigureMake'
+name = 'pgplot'
+version = '5.2'
+
+homepage = 'https://www.astro.caltech.edu/~tjp/pgplot/index.html'
+description = """PThe PGPLOT Graphics Subroutine Library is a Fortran- or C-callable, device-independent graphics package for making simple scientific graphs"""
+
+toolchain = {'name': 'GCCcore', 'version': '9.3.0'}
+source_urls = ['ftp://ftp.astro.caltech.edu/pub/pgplot/']
+sources = ['pgplot%(version)s.tar.gz']
+#source_urls = ['ftp://ftp.astro.caltech.edu/pub/pgplot/pgplot%(version)s.tar.gz',]
+#sources = [SOURCE_TAR_GZ]
+#soueces = []
+dependencies = [
+    # ('X11', '20180604'),
+    ('X11','20200222')
+]
+prebuildopts = "mkdir %(builddir)s/pgplot_tmp &&"
+
+local_premake = """EOF
+#cd %(installdir)
+#mkdir %(builddir)s/pgplot_tmp
+cp %(builddir)s/pgplot/drivers.list %(builddir)s/pgplot_tmp/
+#cp /packages/build/pgplot/5.2/GCCcore-8.3.0/pgplot/drivers.list  /packages/software/pgplot/5.2-GCCcore-8.3.0/
+sed -i 's/^!\ PSDRIV\ 1\ \/PS/\ PSDRIV\ 1\ \/PS/g' drivers.list
+sed -i 's/^!\ PSDRIV\ 2\ \/VPS/\ PSDRIV\ 2\ \/VPS/g' drivers.list
+sed -i 's/^!\ PSDRIV\ 3\ \/CPS/\ PSDRIV\ 3\ \/CPS/g' drivers.list
+sed -i 's/^!\ PSDRIV\ 4\ \/VCPS/\ PSDRIV\ 4\ \/VCPS/g' drivers.list
+sed -i 's/^!\ XWDRIV\ 2\ \/XSERVE/\ XWDRIV\ 2\ \/XSERVE/g' drivers.list
+EOF
+"""
+prebuildopts += "cat > %(builddir)s/pgplot_tmp/premake <<" + \
+    local_premake
+
+configopts = " "
+skipsteps = ['configure']
+prebuildopts += 'cd %(builddir)s/pgplot_tmp/ && chmod +x premake && '
+prebuildopts += 'sh premake &&'
+prebuildopts += '%(builddir)s/pgplot/makemake  %(builddir)s/pgplot linux g77_gcc_aout &&'
+#prebuildopts += "export  FCOMPL=gfortran &&"
+prebuildopts += "sed -i 's/FCOMPL\=g77/FCOMPL\=gfortran/g' makefile &&"
+#configure_cmd_prefix = " "
+#configure_cmd = " "
+#build_cmd = "chmod +x premake"
+#configure_cmd += chmod +x premake
+#configure_cmd += ./premake
+#configure_cmd = 'cd %(installdir) && chmod +x local_premake && ./local_premake '
+#buildopts = "FCOMPL=gfortran"
+parallel = 1
+build_cmd = "make "
+# build_cmd += "make cpg"
+#skipsteps = ['install']
+# skipsteps = ['install']
+#
+install_cmd = "cp -r  %(builddir)s/pgplot_tmp/*  %(installdir)s/ "
+sanity_check_paths = {
+    'files': ['libcpgplot.a','libcpgplot.a','pgdemo1'],
+    'files' : ['libpgplot.a'],
+    'dirs': []
+}
+# make sure that pdf terminal type is available
+#sanity_check_commands = ["pgdemo1"]
+
+moduleclass = 'vis'

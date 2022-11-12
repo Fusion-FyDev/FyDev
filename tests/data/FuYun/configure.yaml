@@ -1,0 +1,59 @@
+
+EeResp_dir : /gpfs/fuyun/software/FyBuild/EbfilesRespository
+MoResp_dir : /gpfs/fuyun/ModuleRepository
+home_dir : /gpfs/fuyun/
+dirs:
+  intall_dir : /gpfs/fuyun/
+  pkg_softwares: softwares
+  pkg_sources : sources
+  pkg_modulefile: modules
+  pkg_fymodules: fy_modules
+  pkg_ebrepo : eb_repos
+
+default_modulefile_name: fy_module.yaml
+
+default_toolchain: gompi-2020a
+list_cmd:  -D
+build_cmd: -l
+force_cmd: --force
+rebuild_cmd: -rebuild
+fetch_cmd: --fetch -l
+eb_options:
+  - --force
+  - --robot
+  - --minimal-toolchains
+  - --experimental
+  - --use-existing-modules
+  - --info
+  - --robot-paths=/gpfs/fuyun/software/EasyBuild/4.3.2/easybuild/easyconfigs:/gpfs/fuyun/software/FyBuild/EbfilesRespository
+# options= ['-Dr',"--minimal-toolchains","--try-update-deps","--experimental"]
+build_toolchain: gopmi
+build_toolchain_version: 2020a
+
+configure:
+  - ~/.spdm/configure.yaml
+
+
+
+resolver:
+  base_uri: https://fusionyun.org/schema/draft-00
+  prefetch: "pkgdata://spdm/schemas/"
+  alias:
+    - [
+        "*",
+        "/scratch/liuxj/FYDEV-Workspace/SpDB/examples/data/FuYun/modules/*/fy_module.yaml",
+      ]
+    - [
+        "*",
+        "/scratch/liuxj/FYDEV-Workspace/SpDB/examples/data/FuYun/modules/*.yaml",
+      ]
+    - ["*", "/fuyun/modules/*/fy_module.yaml"]
+    - ["*", "/fuyun/modules/*.yaml"]
+# factory:
+#   alias:
+# - ["https://fusionyun.org/schemas/draft-00/flow/", "PyObject:///spdm/flow/"]
+# - ["https://fusionyun.org/flow/nodes/", "PyObject:///spdm/flow/nodes/"]
+# - ["https://fusionyun.org/", "PyObject:///spdm/*#{fragment}"]
+# - ["https://fusionyun.org/", "SpModule:///*#{fragment}"]
+# module_prefix:
+#   - spdm.flow

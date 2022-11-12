@@ -1,0 +1,60 @@
+$id: /actors/physics/genray/{version}{tag}
+$schema: SpModule#SpModuleLocal
+annotation:
+  contributors:
+  - Salmon
+  description: \n Just a demo \n multiline string example\n
+  homepage: http://funyun.com/demo.html
+  label: GenRray
+  license: GPL
+  name: genray
+  tag: '{tag}'
+  version: '{version}'
+build:
+  eb: /gpfs/fuyun/software/genray/201213-gompi-2019b
+  toolchain:
+    name: gompi
+    version: '{FY_TOOLCHAIN_VERSION}'
+  toolchainopts:
+    pic: true
+in_ports:
+  config:
+    $class: file/namelist
+    default:
+      genr:
+        mnemonic: '{JOB_ID}'
+        outdat: '{WORKING_DIR}'
+        partner: '{profile_in}'
+      tokamak:
+        eqdskin: '{equilibrium}'
+    path: genray.dat
+    template: '{FY_MODULEFILE_DIR}/template/genray.in'
+  dt:
+    $class: float
+    $comment: Inputs the data for all NAMELISTs used in the code.
+    default: 0.1
+  equilibrium:
+    $class: file/geqdsk
+  number_of_steps:
+    $class: integer
+    default: 1
+  profile_in:
+    $class: file/netcdf
+    $schema:
+      $id: '{metadata.annotation.name}/profile_in'
+out_ports:
+  equilibrium:
+    $class: file/geqdsk
+    path: '{inputs.equilibrium}'
+  result:
+    $class: file/netcdf
+    path: '{JOB_ID}.nc'
+postscript:
+- module purge
+prescript:
+- module use /fuyun/modules/all
+- module purge
+- module load genray/{version}{tag}
+run:
+  arguments: ''
+  exec_file: bin/xgenray_dummy

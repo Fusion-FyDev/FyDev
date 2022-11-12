@@ -1,0 +1,12 @@
+name: git
+version: 2.28.0
+tag: GCCcore-10.2.0-nodocs
+fullname: git/2.28.0-GCCcore-10.2.0-nodocs
+fullmodulename: git-2.28.0-GCCcore-10.2.0-nodocs
+buildtype: rebuild
+keyword: Rebuild
+ebfiles-keyword: EBexists
+ebfilepath: /fuyun/software/git/2.28.0-GCCcore-10.2.0-nodocs/easybuild/git-2.28.0-GCCcore-10.2.0-nodocs.eb
+buildcmd: eb /gpfs/fuyun/software/FyBuild/tests/data/FuYun/configure.yaml /scratch/liuxj/workspace/FyBuild/CI/Gitlab-CI/fypm-Eb/scripts/temple.yaml
+  -r --rebuild --minimal-toolchains /gpfs/fuyun/FyRespository/EbfilesRespository/easybuild/easyconfigs
+  /fuyun/software/EasyBuild/4.4.1/easybuild/easyconfigs /fuyun/software/EasyBuild/4.4.1/easybuild/easyconfigs/g/git/git-2.28.0-GCCcore-10.2.0-nodocs.eb

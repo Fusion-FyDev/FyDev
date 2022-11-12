@@ -1,0 +1,5 @@
+源插件源地址：https://updates.jenkins.io/update-center.json
+改为下列三个url地址，任一一个即可
+1 http://mirror.xmission.com/jenkins/updates/update-center.json   # 推荐
+2 http://mirrors.shu.edu.cn/jenkins/updates/current/update-center.json
+3 https://mirrors.tuna.tsinghua.edu.cn/jenkins/updates/update-center.json

@@ -1,0 +1,45 @@
+home_dir: ~/workspaces/sp_repo/
+work_dir : /gpfs/fuyun/
+
+default_modulefile_name: fy_module.yaml
+
+default_toolchain: [GCC, "8.3.0"]
+#两个需要查找的文件，一个是eb,但是eb文件的形式是什么样的？至少文件名是什么样的，要和tmple文件中相同
+#另外一个文件是tmple文件，首先先去查找已经安装的对应的包的目录下面，查找相近的，如果没有对应的安装包，再去默认目录下查找
+default_ebrepository_dir : /scratch/liuxj/eb-repository
+default_tmplefile_dir : /scratch/liuxj/fy-tmplefile
+
+build_cmd: eb --use-existing-modules --info -l -r
+build_toolchain: gopmi
+build_toolchain_version: 2019b
+
+configure:
+  - ~/.spdm/configure.yaml
+
+dirs:
+  pkg_softwares: software
+  pkg_modulefile: modulefiles
+  modules: fy_modules
+
+resolver:
+  base_uri: https://fusionyun.org/schema/draft-00
+  prefetch: "pkgdata://spdm/schemas/"
+  alias:
+    - [
+        "*",
+        "/scratch/liuxj/FYDEV-Workspace/SpDB/examples/data/FuYun/modules/*/fy_module.yaml",
+      ]
+    - [
+        "*",
+        "/scratch/liuxj/FYDEV-Workspace/SpDB/examples/data/FuYun/modules/*.yaml",
+      ]
+    - ["*", "/fuyun/modules/*/fy_module.yaml"]
+    - ["*", "/fuyun/modules/*.yaml"]
+# factory:
+#   alias:
+# - ["https://fusionyun.org/schemas/draft-00/flow/", "PyObject:///spdm/flow/"]
+# - ["https://fusionyun.org/flow/nodes/", "PyObject:///spdm/flow/nodes/"]
+# - ["https://fusionyun.org/", "PyObject:///spdm/*#{fragment}"]
+# - ["https://fusionyun.org/", "SpModule:///*#{fragment}"]
+# module_prefix:
+#   - spdm.flow

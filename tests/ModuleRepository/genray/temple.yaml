@@ -1,0 +1,38 @@
+$id: /actors/physics/genray/{version}{tag}
+$schema: SpModule#SpModuleLocal
+Pflag: 1
+Tflag: 1
+annotation:
+  contributors: liuxj
+  date: Mon Jul 19 10:44:25 2021
+  email: lxj@ipp.ac.cn
+description: this is a template file. \n you can refer this template file to produce
+  your own fy_module file of different packages. \n If you have any question ,please
+  connet to liuxj(lxj@ipp.ac.cn)
+homepage: http://funyun.com/demo.html
+information:
+  name: genray
+  version: '2013'
+install:
+- "$class : EasyBuild"
+- process:
+    build:
+      budild_cmd: command
+      ebfile: 
+    dependlist: null
+    toolchain:
+      name: gompi-2019a
+      version: 2020a
+license: GPL1
+postscript:
+- module purge
+prescript:
+- module use /fuyun/modules/all
+- module purge
+- module load genray/{version}{tag}
+run: null
+test:
+  arguments: ''
+  exec_file: bin/xgenray_dummy
+  input: null
+  output: null

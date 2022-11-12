@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "../../jenkins-blueocean"
+		},
+		{
+			"path": "../tmp/CICD_test"
+		},
+		{
+			"path": "../tmp"
+		},
+		{
+			"path": "."
+		}
+	]
+}

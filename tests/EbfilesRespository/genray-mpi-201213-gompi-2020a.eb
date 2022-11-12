@@ -1,0 +1,64 @@
+# #
+# This file is an EasyBuild reciPY as per https://github.com/easybuilders/easybuild
+#
+# Copyright:: Copyright 2012-2013 University of Luxembourg/Luxembourg Centre for Systems Biomedicine
+# Authors::   Fotis Georgatos <fotis.georgatos@uni.lu>
+# License::   MIT/GPL
+# $Id$
+#
+# This work implements a part of the HPCBIOS project and is a component of the policy:
+# http://hpcbios.readthedocs.org/en/latest/HPCBIOS_2012-97.html
+# #
+easyblock = 'ConfigureMake'
+
+name = 'genray-mpi'
+version = '201213'
+
+homepage = 'http://compxco.com/genray.html'
+description = "GENRAY is a general ray tracing code for the calculation of electromagnetic wave                 propagation and absorption in the geometrical optics approximation. It provides a                 solution of the ray tracing equations in general non-axisymmetric geometry, although                  work to date is with axisymmetric equilibria with added toroidal perturbations.                 Several alternative dispersion functions D are provided in order to ray trace for EC, LH, and ICRF waves.                 Current drive is calculated based on Maxwellian distribution functions. Results are coupled to the CQL3D code                  to provide input for calculation of the rf QL diffusion coefficients."
+
+toolchain = {'name': 'gompi', 'version': '2020a'}
+
+# * sources = [
+# *     {'git_config': {'url': 'https://github.com/compxco', 'tag': 'master', 'repo_name': 'genray'}, 'filename': '%(name)s-200117.tar.gz'},
+# * ]
+
+# patches = ["%(name)s-%(version)s-pompi-2020.01.patch"]
+sources = ['genray-mpi-201213.tar.gz']
+builddependencies = [
+    ('OpenMPI', '4.0.3', '', ('GCC', '9.3.0')),
+]
+dependencies = [
+    ('pgplot', '5.2', '', ('GCCcore', '9.3.0')),
+    ('netCDF', '4.7.4'),
+    ('netCDF-Fortran', '4.5.2'),
+]
+
+prebuildopts = """cat > %(builddir)s/genray/premake <<EOF
+cp %(builddir)s/genray/makefile_mpi.gfortran64  %(builddir)s/genray/Makefile
+sed -i 's/^INCLUDE=/#INCLUDE=/g' Makefile
+sed -i 's/^LOCATION/#LOCATION/g' Makefile
+sed -i 's/^LIBRARIES/#LIBRARIES/g' Makefile
+EOF
+cd %(builddir)s/genray/ && chmod +x premake && sh premake &&"""
+
+#buildopts = local_envs+" make"
+parallel = 1
+
+install_cmd = "cp -r  %(builddir)s/genray/xgenray_mpi.gfortran64  %(installdir)s/ "
+skipsteps = ['configure']
+build_cmd = """
+    export INCLUDE="-I/usr/include -I${EBROOTNETCDF}/include -I${EBROOTNETCDFMINFORTRAN}/include -I${EBROOTOPENMPI}/include"
+    export LOCATION="-L/usr/lib64 -L${EBROOTPGPLOT} -L${EBROOTNETCDF}/lib -I${EBROOTNETCDFMINFORTRAN}/lib -I${EBROOTOPENMPI}/lib"
+    export  LIBRARIES="${LOCATION}  -lX11 -lnetcdf -lnetcdff -lpgplot"
+     make"""
+
+#build_cmd += ''
+sanity_check_paths = {
+    'files': ['xgenray_mpi.gfortran64'],
+    'dirs': [],
+}
+
+# make sure that pdf terminal type is available
+# sanity_check_commands = ["gnuplot -e 'set terminal pdf'"]
+moduleclass = 'phys'
