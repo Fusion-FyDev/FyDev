@@ -1,6 +1,6 @@
 
 EeResp_dir : /gpfs/fuyun/software/FyBuild/EbfilesRespository
-MoResp_dir : /gpfs/fuyun/ModuleRepository
+MoResp_dir : /ssd01/liuxiaojuan_work/workspace_for_scidata/FyBuild/tests/ModuleRepository/
 home_dir : /gpfs/fuyun/
 dirs:
   intall_dir : /gpfs/fuyun/

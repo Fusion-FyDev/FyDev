@@ -28,7 +28,7 @@ import  fypm.EasyBuildPa as bs
 
 # import module tool  from EasyBuild 
 from easybuild.tools.filetools import remove_dir
-from easybuild.tools.modules import get_software_root_env_var_name, modules_tool
+from easybuild.tools.modules import get_software_root_env_var_name, modules_tool,get_software_libdir
 from easybuild.tools.options import set_up_configuration
 from easybuild.tools.run import run_cmd
 
@@ -64,10 +64,11 @@ class ModuleEb(ModuleRepository):
     '''
 
     def __init__(self, name, version,tag,collection=False,depend_args=[],install_args=[],path=None,repo_name=None, repo_tag=None,*args,**kwargs):
-
+        
         super().__init__(repo_name=None, repo_tag=None,*args ,**kwargs)
         
         name = name.strip()
+        logger.info(f"Now start to init the software {name}.")
         if not name:
             raise ValueError('module name cannot be empty,I dont know what you want')
         if not isinstance(name, str):
@@ -126,7 +127,7 @@ class ModuleEb(ModuleRepository):
                 # self.eb_options = eb_options
             except :
                 raise ValueError('I cannot get name ,I dont know what you want')            
-                
+        logger.info(f"The ID for the software is {self._modulefullname}.")       
         self._path = path
         self._ebfilename = '-'.join(self._fullname.split('/'))
 
@@ -215,7 +216,24 @@ class ModuleEb(ModuleRepository):
         else:
             raise FileNotFoundError(f"the {fymodule_path} path doesn't exist.")
    
-   
+    def load_pa(self,*args,**kwargs):
+        import subprocess
+        if (self.checkpa(*args,**kwargs)[0] ==1):
+            modulename=self.checkpa(*args,**kwargs)[1][0]
+            mod_tool = modules_tool()
+            # 这里只是得到变量名，没有解析变量
+            env_var_name = get_software_root_env_var_name(self.name)
+            mod_tool.load([modulename])
+            # env_libdir = get_software_libdir(self.name)
+            print("Current $%s value: %s" % (env_var_name, os.getenv(env_var_name, '(no set)')))
+            # print(f"Current {env_var_name} lib: {env_libdir}")
+            process = subprocess.Popen(['which', "${env_var_name}"], stdout=subprocess.PIPE)
+            for line in process.stdout:
+                print(line.decode())
+            # result = subprocess.run(['which', env_var_name], capture_output=True)
+            # print(result.stdout.decode())   
+            # print("Current $%s value: %s" % (env_var_name, os.getenv(printenv, '(no set)')))
+        
     def list_avail_pa(self,*args,**kwargs):
         fullname = self.fullname
         logger.debug(f'the fy-fullname   is {fullname}')
@@ -223,36 +241,58 @@ class ModuleEb(ModuleRepository):
              raise TypeError('module name not a string')
         opts, cfg_settings = set_up_configuration(args=[], silent=True)
         mod_tool = modules_tool()
+        # fullname = "genray"
         list_avail_modules = mod_tool.available(fullname)
         logger.debug(f'the fy-list_avail_modules   is {list_avail_modules}')
         if len(list_avail_modules) :
             return list_avail_modules
         else:
-           raise KeyError(f"the {fullname} is not installed,you need connect to the manager  to install it ! .")
-
+           other_avail_modules = mod_tool.available(self.name) 
+           logger.debug(f'The Other available packages have {other_avail_modules}')
+           raise KeyError(f"the {fullname} is not installed,you can choose the other package ! .")
+       
 
     def checkpa(self,*args,**kwargs):
         # to check the modulename which will be install is installed or not 
+        logger.info(f'Use the ID {self._modulefullname} to check if the package is accessible.')
         fullname = self.fullname
+        # check if fullname is a string
         if not isinstance(fullname, str):
             raise TypeError('module name not a string')
         opts, cfg_settings = set_up_configuration(args=[], silent=True)
         mod_tool = modules_tool()
         flag = 0
-        if fullname.find("/") != -1:
+        # check if fullname contains "/"
+        if "/" in fullname:
             avail_eb_modules = mod_tool.available(fullname)
-            logger.debug(f"the output of installed module is {len(avail_eb_modules)}")
+            logger.info(f"Accessible package is: {avail_eb_modules}")
             if len(avail_eb_modules) :
                 flag +=1
-            # logger.log(f"the output of installed module is {avail_eb_modules}")
                 return flag,avail_eb_modules
             else:
+                other_avail_modules = mod_tool.available(self.name) 
                 logger.debug(f'the {fullname} is not installed.')
-                return flag,None
-                # raise TypeError(f"the {fullname} is not installed .") #delete by 2021.11.1
-                # self.listpa(fullname,max_list = True)
+                logger.debug(f'The Other available packages have {other_avail_modules}')
+                logger.debug(f'The system can try to install {other_avail_modules}')
+                try:
+                    self.fetchsources()
+                    self.par()
+                    self.install()
+                    avail_eb_modules = mod_tool.available(fullname)
+                    if len(avail_eb_modules) : 
+                        logger.debug(f'the install is sucessful,please use it.')
+                        return flag,avail_eb_modules
+                    else:
+                        raise RuntimeError('the install failed')
+                except (KeyError, RuntimeError) as e:
+                    logger.debug(e)
         else:
-            raise KeyError(f"the {fullname} is incomplete.")
+            # use try-except to catch KeyError
+            try:
+                raise KeyError(f"the {fullname} is incomplete.")
+            except KeyError as e:
+                print(e)
+            
 
     def search_ebfiles(self,*args,**kwargs):
         """Find ebfiles in  /gpfs/fuyun/EbfilesRespository/name/ .If the file is exsit,you can use it ';not,you need to try-toolchain to use  it"""
@@ -625,7 +665,53 @@ class ModuleEb(ModuleRepository):
             self.generate_yaml_doc_ruamel(temple_path)
             desfile = temple_path
         return desfile
-
+    
+    def run_command(self,cmd, check=False, timeout=None, shell=False, log=True):
+        logger.info(f"Execute Shell command {cmd}")
+        # @ref: https://stackoverflow.com/questions/21953835/run-subprocess-and-print-output-to-logging
+        # if isinstance(cmd, str) and not shell:
+        #     cmd = shlex.split(cmd)
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                encoding="utf-8"
+            )
+            proc_stdout, proc_stderr = process.communicate(timeout=None)
+            # for line in proc_stdout :  # b'\n'-separated lines
+            #     logger.info(line)
+            logger.info(f"Execute the proc_stdout is {proc_stdout}")
+            logger.info(f"Execute the proc_stderr is {proc_stderr}")
+        except subprocess.TimeoutExpired as e:
+            os.killpg(process.pid, signal.SIGKILL)
+            raise RuntimeError(e.cmd,
+                            process.stdout.read(),
+                            process.stderr.read(), timeout) from None
+            # process_output, _ = command_line_process.communicate()
+        completed = subprocess.CompletedProcess(cmd,
+                                                returncode=process.returncode,
+                                                stdout=proc_stdout,
+                                                stderr=proc_stderr)
+        if check and process.returncode != 0:
+            raise process.subprocessCalledProcessError(completed.args,
+                                                    completed.stdout, completed.stderr,
+                                                    completed.returncode)
+        return completed
+    def pre_run(self,modulename):
+        fymodule = self.search_fymodule()
+        self.load_configure(fymodule[1])
+        workdir = self._conf.get('workdir')
+        cmdexe = self._conf.get("run")["exec"]
+        exec_cmd = f"cd {workdir};{cmdexe}"
+        logger.debug(f'the cmd  is {exec_cmd}')
+        mod_tool = modules_tool()
+        mod_tool.load([modulename])
+        result = self.run_command(exec_cmd)
+        return result
+        # run_cmd(cmd)
+        
 
 
 
