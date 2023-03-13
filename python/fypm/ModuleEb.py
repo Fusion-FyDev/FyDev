@@ -1,30 +1,16 @@
-# from FyDev.python.tests.test_basic import module
-# from FyBuild.python.fypm.writefile import generate_yaml_doc_ruamel
-import collections
+
+### For basic module
 import os
-import sys
-# sys.path.append('/scratch/liuxj/FYDEV-Workspace/SpDB/python')
-import pathlib
-import shlex
 import subprocess
 import signal
-import traceback
-import uuid
-import re
-from pathlib import Path, PurePath,PurePosixPath
-# import yaml
+from pathlib import Path, PurePath,PurePosixPath 
 import time
 import linecache
-# from ruamel.yaml import YAML
 from ruamel import yaml
-
+### For  utils                      
 from spdm.util.logger import logger
 
-# sys.path.append('/scratch/liuxj/FYDEV-Workspace/FyBuild/python')
 from spdm.flow.ModuleRepository import ModuleRepository
-import pprint
-from fypm.StandardModule import  StandardModule
-import  fypm.EasyBuildPa as bs
 
 # import module tool  from EasyBuild 
 from easybuild.tools.filetools import remove_dir
@@ -51,37 +37,39 @@ from easybuild.tools.build_log import EasyBuildError, print_error, print_msg, st
 from easybuild.tools.hooks import START, END, load_hooks, run_hook
 
 
-
 class ModuleEb(ModuleRepository):
     '''Module wrapper.
 
     This class represents internally a module. Concrete module system
     implementation should deal only with that.
-    the init will provide the name ,version ,tag and fullname .
+    the init will provide the name ,version ,toolchain,tag and fullname .
     if the version is null ,I dont know what you want .
-    If the tag is null ,I can read the default tag from configure,yaml \
+    If the toolchain is null ,I can read the default toolchain from configure,yaml \
         which by def load_configure() in class ModuleRepository .
     '''
 
-    def __init__(self, name, version,tag,collection=False,depend_args=[],install_args=[],path=None,repo_name=None, repo_tag=None,*args,**kwargs):
+    def __init__(self, name, version,toolchain,tag="",collection=False,depend_args=[],install_args=[],path=None,repo_name=None, repo_tag=None,*args,**kwargs):
         
         super().__init__(repo_name=None, repo_tag=None,*args ,**kwargs)
         
         name = name.strip()
         logger.info(f"Now start to init the software {name}.")
         if not name:
-            raise ValueError('module name cannot be empty,I dont know what you want')
+            raise ValueError('name cannot be empty,I dont know what you want')
         if not isinstance(name, str):
-            raise TypeError('module name not a string')
+            raise TypeError('name not a string')
 
         version = version.strip()
 
         if not isinstance(version, str):
-            raise TypeError('module version not a string')
-
-        tag = tag.strip()  
+            raise TypeError('version not a string')
+        toolchain = toolchain.strip()
+        tag = tag.strip() 
+         
+        if not isinstance(toolchain, str):
+            raise TypeError('toolchain not a string')        
         if not isinstance(tag, str):
-            raise TypeError('module tag not a string')            
+            raise TypeError('tag not a string')            
 
         # first check the contition ,get the all value
         if not version:
@@ -91,40 +79,53 @@ class ModuleEb(ModuleRepository):
                                 f"you can use fetch to check which module is installed")
                 self._name = name
                 self._version = " "
+                self.toolchain = " "
                 self._tag = " "
                 self._fullname = name
             except:
                 raise ValueError(f"the version is empity,I dont know what you want ")
-        elif tag :
+        
+        if not tag  :
             try :
                 self._name = name
                 self._version = version
-                self._tag = tag
+                self._toolchain = toolchain
                 self._modulename = '-'.join((self._name, self._version))
-                self._modulefullname = '-'.join((self._name, self._version,self._tag))
-                self._fullname = '-'.join(('/'.join((self._name, self._version)),self._tag))
+                self._modulefullname = '-'.join((self._name, self._version,self._toolchain))
+                self._fullname = '-'.join(('/'.join((self._name, self._version)),self._toolchain))
             
             except :
-                raise ValueError('I cannot get fullname ,I dont know what you want')            
-        else :
-            try:
+                raise ValueError('I cannot get fullname ,I dont know what you want') 
+        elif not toolchain :
+            try :
                 """
-                default_tag = self.load_configure(self),here is the interface with the class ModuleRepository
-                which get the default tag from the configure file .
+                default_toolchain = self.load_configure(self),here is the interface with the class ModuleRepository
+                which get the default toolchain from the configure file .
                 """
-                # default_module = self.__init__( name, version,tag,collection=False, path=None,repo_name=None, repo_tag=None,*args,**kwargs)
-                # path="/scratch/liuxj/FYDEV-Workspace/FyDev/python/tests/data/FuYun/configure.yaml"
+                # default_module = self.__init__( name, version,toolchain,tag,collection=False, path=None,repo_name=None, repo_tag=None,*args,**kwargs)
                 self.load_configure(path)
-                default_tag = self._conf.get("default_toolchain")
-                logger.debug(f"the default_tag name from the default-configure  is '{default_tag}'")
-                # default_tag = 'foss-2020a'
+                default_toolchain = self._conf.get("default_toolchain")
+                logger.debug(f"the default_toolchain name from the default-configure  is '{default_toolchain}'")
+                # default_toolchain = 'foss-2020a'
                 self._name = name
                 self._version = version
-                self._tag = default_tag
+                self._toolchain = default_toolchain
                 self._modulename = '-'.join((self._name, self._version))
-                self._modulefullname = '-'.join((self._name, self._version,self._tag))
-                self._fullname = '-'.join(('/'.join((self._name, self._version)),self._tag))
+                self._modulefullname = '-'.join((self._name, self._version,self._toolchain))
+                self._fullname = '-'.join(('/'.join((self._name, self._version)),self._toolchain))
                 # self.eb_options = eb_options
+            
+            except :
+                raise ValueError('I cannot get fullname ,I dont know what you want')        
+        else :
+            try:
+                self._name = name
+                self._version = version
+                self._toolchain = toolchain
+                self._modulename = '-'.join((self._name, self._version))
+                self._modulefullname = '-'.join((self._name, self._version,self._toolchain))
+                self._fullname = '-'.join(('/'.join((self._name, self._version)),self._toolchain,self._tag))
+
             except :
                 raise ValueError('I cannot get name ,I dont know what you want')            
         logger.info(f"The ID for the software is {self._modulefullname}.")       
@@ -141,7 +142,9 @@ class ModuleEb(ModuleRepository):
     @property
     def version(self):
         return self._version
-
+    @property
+    def toolchain(self):
+        return self._toolchain
     @property
     def tag(self):
         return self._tag
@@ -153,7 +156,6 @@ class ModuleEb(ModuleRepository):
     @property
     def modulename(self):
         return self._modulename
-
 
     @property
     def modulefullname(self):
@@ -370,15 +372,12 @@ class ModuleEb(ModuleRepository):
         ebfile_path = det_easyconfig_paths([ebfilename])[0]
         ec_dicts, _ = parse_easyconfigs([(ebfile_path, False)])
         print(ec_dicts)
-        # print(ec_dicts['ec']['name'])
-        # print(ec_dicts['ec']['name'])
         if (dry_run == False):
             eb = get_easyblock_instance(ec_dicts[0])
             eb.fetch_sources()
             eb_sources=eb.src
         else:
             ordered_ecs = resolve_dependencies(ec_dicts, mod_tool,retain_all_deps=True)
-            # print(ordered_ecs)
             
             print(type(ordered_ecs))
             print(len(ordered_ecs))
@@ -547,8 +546,8 @@ class ModuleEb(ModuleRepository):
     def generate_yaml_doc_ruamel(self,yaml_file):
         NAME = self.name
         VERSION = self.version
-        TAG = self.tag
-        ID = NAME+'/'+VERSION+'-'+TAG
+        toolchain = self.toolchain
+        ID = NAME+'/'+VERSION+'-'+toolchain
         DATA = time.ctime()
         ebfile,build_cmd = self.installpa()
         BUILD_CMD = build_cmd
@@ -584,7 +583,7 @@ class ModuleEb(ModuleRepository):
                                 'depend_cmd':DEPEND_CMD,
                                 'packageslist':PACKLIST},
                             'toolchain':{
-                                'tag':TAG},
+                                'toolchain':toolchain},
                                 },
                     'license':'GPL',
                     'postscript':'module purge',
@@ -612,7 +611,7 @@ class ModuleEb(ModuleRepository):
                 doc['annotation']['date'] = time.ctime()
                 doc['information']['name'] = self.name
                 doc['information']['version'] = self.version
-                doc['install'][1]['process']['toolchain']['tag'] = self.tag
+                doc['install'][1]['process']['toolchain']['tag'] = self.toolchain
                 depend_cmd,denpendlist = self.listdepend()
                 doc['install'][1]['process']['depend']['depend_cmd'] = depend_cmd
                 doc['install'][1]['process']['depend']['packageslist'] = denpendlist
