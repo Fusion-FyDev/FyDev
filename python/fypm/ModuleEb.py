@@ -198,7 +198,7 @@ class ModuleEb(ModuleRepository):
     def search_fymodule(self,*args,**kwargs):
         """Find fymodule in  /gpfs/fuyun/ModuleRepository/name/ .If the file is exsit,the package is exsit';not,you need to install it"""
         path=self.path
-        logger.debug(f'the path dir  is {path}')
+        # logger.debug(f'the path dir  is {path}')
         self.load_configure(path)
         software_path = self._conf.get("MoResp_dir")
         flag = 0
@@ -206,9 +206,9 @@ class ModuleEb(ModuleRepository):
         modulename = self.modulefullname
         # software_path = "/gpfs/fuyun/fy_modules/physics/" 
         templefilename = modulename+'.yaml'
-        logger.debug(f'the fy-modulename   is {templefilename}')
+        # logger.debug(f'the fy-modulename   is {templefilename}')
         fymodule_path = software_path+'/'+name
-        logger.debug(f'the fymodule_path   is {fymodule_path}')
+        # logger.debug(f'the fymodule_path   is {fymodule_path}')
         if Path(fymodule_path).exists() :
             if  Path(Path(Path(fymodule_path).joinpath(templefilename))).is_file() :
                 flag +=1
@@ -287,15 +287,15 @@ class ModuleEb(ModuleRepository):
                     logger.info(f'The sources location  is {sourcedir}')
                     ### parase the discription file to get configure file for EasyBuild
                     logger.info(f'Parase discription file ')
-                    # self.par()
-                    logger.info(f'Config file is get')
+                    ebfile = self.search_ebfiles()
+                    logger.info(f'Config file is {ebfile}')
                     ### Install the package now!
                     logger.info(f'Install it now ')
                     installresult = self.installpa()
                     logger.info(f'Install is sucesful ,the install cmd is {installresult}  ')
                     avail_eb_modules = mod_tool.available(fullname)
                     if len(avail_eb_modules) : 
-                        logger.debug(f'the install is sucessful,please use it.')
+                        logger.info(f'the install is sucessful,please use it.')
                         return flag,avail_eb_modules
                     else:
                         raise RuntimeError('the install failed')
@@ -318,7 +318,7 @@ class ModuleEb(ModuleRepository):
         mod_tool = modules_tool()
         # software_path = "/gpfs/fuyun/fy_modules/physics/" 
         ebfilename = modulename+'.eb'
-        logger.debug(f'the fy-ebfilename   is {ebfilename}')
+        # logger.debug(f'the fy-ebfilename   is {ebfilename}')
         ebfile_path = det_easyconfig_paths([ebfilename])[0]
         if len(ebfile_path) :
             flag +=1
@@ -367,7 +367,7 @@ class ModuleEb(ModuleRepository):
         ebfilename = modulename+'.eb'
         opts, cfg_settings = set_up_configuration(args=[], silent=True)
         mod_tool = modules_tool()
-        logger.debug(f'the cfg_settings  is {cfg_settings}') 
+        # logger.debug(f'the cfg_settings  is {cfg_settings}') 
         (build_specs, _log, logfile, robot_path, search_query, eb_tmpdir, try_to_generate, tweaked_ecs_paths,*other) = cfg_settings
         ebfile_path = det_easyconfig_paths([ebfilename])[0]
         ec_dicts, _ = parse_easyconfigs([(ebfile_path, False)])
@@ -671,18 +671,19 @@ class ModuleEb(ModuleRepository):
                                                     completed.stdout, completed.stderr,
                                                     completed.returncode)
         return completed
-    def pre_run(self,modulename):
+    def run(self,modulename):
+        logger.info(f"Now start to module laod {modulename} and run it,")
         fymodule = self.search_fymodule()
         self.load_configure(fymodule[1])
         workdir = self._conf.get('workdir')
         cmdexe = self._conf.get("run")["exec"]
         exec_cmd = f"cd {workdir};{cmdexe}"
-        logger.debug(f'the cmd  is {exec_cmd}')
+        logger.info(f'the cmd  is {exec_cmd}')
         mod_tool = modules_tool()
-        mod_tool.load([modulename])
+        mod_tool.load(modulename)
+        logger.info(f"The all load module is{mod_tool.list()}")
         result = self.run_command(exec_cmd)
         return result
-        # run_cmd(cmd)
         
 
 
