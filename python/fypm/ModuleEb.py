@@ -265,19 +265,32 @@ class ModuleEb(ModuleRepository):
         # check if fullname contains "/"
         if "/" in fullname:
             avail_eb_modules = mod_tool.available(fullname)
-            logger.info(f"Accessible package is: {avail_eb_modules}")
+            
             if len(avail_eb_modules) :
                 flag +=1
+                logger.info(f"Accessible package is: {avail_eb_modules}")
                 return flag,avail_eb_modules
             else:
                 other_avail_modules = mod_tool.available(self.name) 
-                logger.debug(f'the {fullname} is not installed.')
-                logger.debug(f'The Other available packages have {other_avail_modules}')
-                logger.debug(f'The system can try to install {other_avail_modules}')
+                logger.info(f'the {fullname} is not installed.')
+                logger.info(f'The Other available packages have {other_avail_modules}')
+                logger.info(f'The system can try to install {self.fullname}')
                 try:
-                    self.fetchsources()
-                    self.par()
-                    self.install()
+                    ### find discription file
+                    fymodule = self.search_fymodule()
+                    logger.info(f'The discription file is {fymodule}')
+                    ### fetcch sources 
+                    logger.info(f'Now Fetch sources ')
+                    sourcedir = self.fetchsources()
+                    logger.info(f'The sources location  is {sourcedir}')
+                    ### parase the discription file to get configure file for EasyBuild
+                    logger.info(f'Parase discription file ')
+                    # self.par()
+                    logger.info(f'Config file is get')
+                    ### Install the package now!
+                    logger.info(f'Install it now ')
+                    installresult = self.installpa()
+                    logger.info(f'Install is sucesful ,the install cmd is {installresult}  ')
                     avail_eb_modules = mod_tool.available(fullname)
                     if len(avail_eb_modules) : 
                         logger.debug(f'the install is sucessful,please use it.')
@@ -291,7 +304,7 @@ class ModuleEb(ModuleRepository):
             try:
                 raise KeyError(f"the {fullname} is incomplete.")
             except KeyError as e:
-                print(e)
+                logger.debug(e)
             
 
     def search_ebfiles(self,*args,**kwargs):
@@ -407,8 +420,9 @@ class ModuleEb(ModuleRepository):
         init_session_state.update({'easybuild_configuration': eb_config})
         init_session_state.update({'module_list': modlist})
         forced = opts.options.force or opts.options.rebuild
+        # opts.options.dry_run = True
         dry_run_mode = opts.options.dry_run or opts.options.dry_run_short or opts.options.missing_modules
-
+        logger.debug(f'the dry_run_mode  is {dry_run_mode} and {opts.options.robot}')
         # skip modules that are already installed unless forced, or unless an option is used that warrants not skipping
         if not (forced or dry_run_mode or opts.options.extended_dry_run or opts.options.inject_checksums):
             retained_ecs = skip_available(easyconfigs, mod_tool)
@@ -419,10 +433,14 @@ class ModuleEb(ModuleRepository):
         if len(easyconfigs) > 0:
             # resolve dependencies if robot is enabled, except in dry run mode
             # one exception: deps *are* resolved with --new-pr or --update-pr when dry run mode is enabled
+            opts.options.robot = 1
             if opts.options.robot and (not dry_run_mode):
                 print_msg("resolving dependencies ...", log=_log)
+                logger.debug(f'the dry_run_mode and opts.options.robot  is {dry_run_mode} and {opts.options.robot}')
                 ordered_ecs = resolve_dependencies(easyconfigs, mod_tool)
+                logger.debug(f'the ordered_ecs  is {len(ordered_ecs)}')
             else:
+                logger.debug(f'the dry_run_mode and opts.options.robot  is {dry_run_mode} and {opts.options.robot}')
                 ordered_ecs = easyconfigs
         # elif opts.options.pr_options:
         #     ordered_ecs = None
@@ -430,13 +448,17 @@ class ModuleEb(ModuleRepository):
             print_msg("No easyconfigs left to be built.", log=_log)
             ordered_ecs = []
         if len(ordered_ecs) > 0:
+            logger.debug(f'the ordered_ecs  is {len(ordered_ecs)}')
             ecs_with_res=build_and_install_software(ordered_ecs, init_session_state, exit_on_failure=True)
-        if (self.checkpa(*args,**kwargs)[0] ==1):
-            modulename=self.checkpa(*args,**kwargs)[1][0]
+            logger.debug(f'the ecs_with_res  is {ecs_with_res}')
+            
+            modulename = mod_tool.available(self.fullname)
+        if modulename :
+            
             # 这里只是得到变量名，没有解析变量
             env_var_name = get_software_root_env_var_name(self.name)
-            mod_tool.load([modulename])
-            print("Current $%s value: %s" % (env_var_name, os.getenv(env_var_name, '(no set)')))
+            mod_tool.load(modulename)
+            logger.debug("Current $%s value: %s" % (env_var_name, os.getenv(env_var_name, '(no set)')))
             ebfilepath=os.getenv(env_var_name, '(no set)')+'/easybuild/'+ebfilename
             moduleinstalldir=os.getenv(env_var_name, '(no set)')+'/easybuild/'
             eb_command =[]
@@ -484,56 +506,7 @@ class ModuleEb(ModuleRepository):
         return ebfilepath,eb_commandline  
         remove_dir(opts.tmpdir)     
         run_hook(END, hooks)
-    
-    def search_fymodule_file(self,*args,**kwargs):
-        """Find templefile match  packages  name (in /gpfs/fuyun/fy_modules and other  /gpfs/fuyun/fy_modules/gemray)."""
-        path=self.path
-        logger.debug(f'the path dir  is {path}')
-        self.load_configure(path)
-        software_path = self._conf.get("MoResp_dir")
-        templepath  = None
-        flag = 0
-        name = self.name
-        # software_path = "/gpfs/fuyun/fy_modules/physics/" 
-        # templefilename = 
-        # templefilename = 
-        logger.debug(f'the MoResp_dir dir  is {software_path}')
-        templefilename = self.modulename +'-'+ self.tag+'.yaml'
-        templefilename_sub = self.version +'-'+ self.tag+'.yaml'
-        logger.debug(f'the templefilename   is {templefilename}')
-        logger.debug(f'the templefilename_sub  is {templefilename_sub}')       
 
-        if Path(software_path).exists() :
-            # templepath = Path(tmplefile).parent
-            print("ok1")
-            if  Path(Path(Path(software_path).joinpath(templefilename))).is_file() :
-                print("ok2")
-                flag +=1
-                # search = Path(Path(Path(software_path).joinpath(name,templefilename)))
-                # print(search)
-                return flag,Path(Path(Path(software_path).joinpath(templefilename))),templefilename
-            elif Path(software_path+'/'+self.name).exists() :
-                print("ok3")
-                if Path(Path(Path(software_path).joinpath(name,templefilename_sub))).is_file()  :
-                    print("ok4")
-                # search = Path(Path(Path(software_path).joinpath(name,templefilename)))
-
-                # print(search)
-                    flag +=1
-                    return flag,Path(Path(Path(software_path).joinpath(name,templefilename_sub)))
-                else :
-                    print("ok5")
-
-                    return flag,Path(Path(software_path+'/'+self.name)),templefilename_sub
-            else :
-                print("ok6")
-                Path(software_path+'/'+self.name).mkdir()
-                return flag,Path(software_path+'/'+self.name),templefilename_sub
-        else:
-            print("ok7")
-            Path(software_path).mkdir()
-            return flag,Path(software_path)
-        #     raise  RuntimeError('could fount the templefile ,please gime me it  ') 
                 
     def search_tmple_file(self,MoResp_dir=None,*args,**kwargs):
         """Find templefile match  packages  name (in /gpfs/fuyun/fy_modules and other  /gpfs/fuyun/fy_modules/gemray)."""
