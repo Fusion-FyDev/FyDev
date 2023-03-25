@@ -1,5 +1,7 @@
 
 import collections
+import collections.abc
+
 import inspect
 import os
 import pathlib
@@ -9,50 +11,180 @@ import sys
 import typing
 import uuid
 from functools import cached_property
+from copy import copy
 
 from spdm.util.logger import logger
-from spdm.util.sp_export import sp_find_module
 
-class FyModule(object):
+from .util import get_value
 
-    def __new__(cls,   *args, **kwargs):
-        if cls is FyModule:
-            return cls.create(*args, **kwargs)
-        else:
-            return object.__new__(cls)
+_TFyExecutor = typing.TypeVar('_TFyExecutor', bound='FyExecutor')
 
-    def __init__(self, desc, envs=None, path=None,  **kwargs):
+
+class FyExecutor(object):
+
+    def __init__(self, exec_file, inputs=([], {}), package=None, session=None):
         super().__init__()
 
-        self._envs = envs or {}
+        self._package = package
+
+        self._session = session if session is not None else {}
+
+        if isinstance(exec_file, list):
+            exec_file = "/".join(exec_file)
+        self._exec_file = exec_file
+
+        self._inputs = inputs
+
+    def __call__(self, *args, **kwargs) -> typing.Any:
+        # if self._inputs is not None:
+        #     raise SyntaxError(f"Do not repeat the definition of the input parameters!")
+
+        if hasattr(self, '__value__'):
+            del self.__value__
+
+        if hasattr(self, 'signature'):
+            del self.signature
+
+        self._inputs = (args, kwargs)
+
+        if get_value(self._session, "lazy_eval", False):
+            return self
+        else:
+            return self.__value__
+
+    @cached_property
+    def __value__(self) -> typing.Any:
+        logger.info(f"Start\t: {self.signature}")
+
+        args, kwargs = self._inputs
+
+        args, kwargs = self.pre_process(*args, **kwargs)
+
+        res = self.post_process(self.execute(*args, **kwargs))
+
+        logger.info(f"End\t: {self.signature}")
+
+        return res
+
+    @cached_property
+    def signature(self) -> str:
+        f_name = self._exec_file  # self._module_desc.get('name', 'unnamed')+'.'+'.'.join(map(str, self._rel_path))
+        if self._package is not None:
+            f_name = f"{self._package.tag_str}/{f_name}"
+        if self._inputs is None:
+            args, kwargs = self._module_desc.get("inputs", ([], {}))
+        else:
+            args, kwargs = self._inputs
+
+        para_str = ','.join([str(v) for v in args] + [f"{k}={v}" for k, v in kwargs.items()])
+
+        return f"{f_name}({para_str})"
+
+    @property
+    def inputs(self):
+        """
+            Collect and convert inputs
+        """
+        if self._inputs is not None:
+            return self._inputs
+
+        cwd = pathlib.Path.cwd()
+
+        os.chdir(self.envs.get("WORKING_DIR", None) or cwd)
+
+        envs_map = DictTemplate(collections.ChainMap(
+            {"inputs": collections.ChainMap(self._kwargs, {"_VAR_ARGS_": self._args})}, self.envs))
+
+        args = []
+        kwargs = {}
+        for p_name, p_metadata in self.metadata["in_ports"].items():
+            if p_name != '_VAR_ARGS_':
+                kwargs[p_name] = self.create_dobject(self._kwargs.get(p_name, None),
+                                                     _metadata=p_metadata, envs=envs_map)
+            elif not isinstance(p_metadata, list):
+                args = [self.create_dobject(arg,  _metadata=p_metadata, envs=envs_map) for arg in self._args]
+            else:
+                l_metada = len(p_metadata)
+                args = [self.create_dobject(arg, _metadata=p_metadata[min(idx, l_metada-1)], envs=envs_map)
+                        for idx, arg in enumerate(self._args)]
+
+        self._inputs = args, kwargs
+
+        os.chdir(cwd)
+        return self._inputs
+
+    def outputs(self):
+        if self.outputs is not None:
+            return self.outputs
+        cwd = pathlib.Path.cwd()
+        os.chdir(self.envs.get("WORKING_DIR", None) or cwd)
+
+        result = self.run() or {}
+
+        inputs = self.inputs[1]
+
+        envs_map = DictTemplate(collections.ChainMap({"RESULT": result}, {"inputs": inputs}, self.envs))
+
+        # for p_name, p_metadata in self.metadata.out_ports:
+
+        #     p_metadata = envs_map.apply(p_metadata)
+
+        #     data = result.get(p_name, None) or p_metadata["default"]
+
+        #     if not data:
+        #         data = None
+
+        #     outputs[p_name] = self.create_dobject(data, _metadata=p_metadata)
+
+        outputs = {p_name: self.create_dobject(result.get(p_name, None),
+                                               _metadata=p_metadata, envs=envs_map) for p_name, p_metadata in self.metadata.out_ports}
+
+        self.outputs = collections.ChainMap(
+            outputs, {k: v for k, v in result.items() if k not in self.metadata.out_ports})
+
         self._inputs = None
-        self._outputs = None
-        self._envs["JOB_ID"] = self.job_id
+        os.chdir(cwd)
+        return self.outputs
 
-    def install(self) -> bool:
-        raise NotImplementedError()
+    def pre_process(self, *args, **kwargs):
+        logger.info(f"Pre-process")
+        # self._execute_script(self.metadata.prescript)
+        return args, kwargs
 
-    @property
-    def job_id(self):
-        return f"{sys.get_username()}_{uuid.uuid1()}"
+    def post_process(self, value):
+        logger.info(f"Post-process")
+        # self._execute_script(self.metadata.postscript)
+        return value
 
-    @cached_property
-    def name(self):
-        return str(self.metadata.annotation.name)
+    def execute(self, *args, **kwargs) -> typing.Any:
 
-    @cached_property
-    def root_path(self):
-        module_root = os.environ.get(f"EBROOT{self.name.upper()}", None)
-        if not module_root:
-            logger.error(f"Load module '{self.name}' failed! ")
-            raise RuntimeError(f"Load module '{self.name}' failed!")
+        if self._package is not None:
+            exec_file = self._package.install_dir/self._exec_file
+        else:
+            exec_file = self._exec_file
 
-        return pathlib.Path(module_root).expanduser()
+        if not os.access(exec_file, os.X_OK):
+            raise RuntimeError(f"File {exec_file} is not executable!")
+        logger.info(f"Execute {exec_file}")
+        return None
+        error_msg = None
 
-    @property
-    def envs(self):
-        return collections.ChainMap(self._envs, {"metadata": self.metadata})
+        try:
+            logger.debug(f"Execute Start: {self.metadata.annotation.label}")
+            res = self.execute(*args, **kwargs)
+            logger.debug(f"Execute Done : {self.metadata.annotation.label}")
+        except Exception as error:
+            error_msg = error
+            logger.error(f"Execute Error! {error}")
+            res = None
 
+        if error_msg is not None:
+            raise error_msg
+
+        return res
+
+
+class FyExecutorDummy(FyExecutor):
     def _execute_module_command(self, cmd, working_dir=None):
         # py_command = self._execute_process([f"{os.environ['LMOD_CMD']}", 'python', *args])
         # process = os.popen(f"{os.environ['LMOD_CMD']} python {' '.join(args)}  ")
@@ -173,7 +305,7 @@ class FyModule(object):
             obj = self.create_dobject(data, _metadata=metadata)
         return obj
 
-    def create_dobject(self, data,  _metadata=None, *args, envs=None, **kwargs):
+    def _create_dobject(self, data,  _metadata=None, *args, envs=None, **kwargs):
 
         if not envs:
             envs = {}
@@ -232,111 +364,8 @@ class FyModule(object):
                 res.update(data)
             return res
 
-    @property
-    def inputs(self):
-        """
-            Collect and convert inputs
-        """
-        if self._inputs is not None:
-            return self._inputs
 
-        cwd = pathlib.Path.cwd()
-
-        os.chdir(self.envs.get("WORKING_DIR", None) or cwd)
-
-        envs_map = DictTemplate(collections.ChainMap(
-            {"inputs": collections.ChainMap(self._kwargs, {"_VAR_ARGS_": self._args})}, self.envs))
-
-        args = []
-        kwargs = {}
-        for p_name, p_metadata in self.metadata["in_ports"].items():
-            if p_name != '_VAR_ARGS_':
-                kwargs[p_name] = self.create_dobject(self._kwargs.get(p_name, None),
-                                                     _metadata=p_metadata, envs=envs_map)
-            elif not isinstance(p_metadata, list):
-                args = [self.create_dobject(arg,  _metadata=p_metadata, envs=envs_map) for arg in self._args]
-            else:
-                l_metada = len(p_metadata)
-                args = [self.create_dobject(arg, _metadata=p_metadata[min(idx, l_metada-1)], envs=envs_map)
-                        for idx, arg in enumerate(self._args)]
-
-        self._inputs = args, kwargs
-
-        os.chdir(cwd)
-        return self._inputs
-
-    @property
-    def outputs(self):
-        if self._outputs is not None:
-            return self._outputs
-        cwd = pathlib.Path.cwd()
-        os.chdir(self.envs.get("WORKING_DIR", None) or cwd)
-
-        result = self.run() or {}
-
-        inputs = self.inputs[1]
-
-        envs_map = DictTemplate(collections.ChainMap({"RESULT": result}, {"inputs": inputs}, self.envs))
-
-        # for p_name, p_metadata in self.metadata.out_ports:
-
-        #     p_metadata = envs_map.apply(p_metadata)
-
-        #     data = result.get(p_name, None) or p_metadata["default"]
-
-        #     if not data:
-        #         data = None
-
-        #     outputs[p_name] = self.create_dobject(data, _metadata=p_metadata)
-
-        outputs = {p_name: self.create_dobject(result.get(p_name, None),
-                                               _metadata=p_metadata, envs=envs_map) for p_name, p_metadata in self.metadata.out_ports}
-
-        self._outputs = collections.ChainMap(
-            outputs, {k: v for k, v in result.items() if k not in self.metadata.out_ports})
-
-        self._inputs = None
-        os.chdir(cwd)
-        return self._outputs
-
-    def preprocess(self):
-        logger.debug(f"Preprocess: {self.__class__.__name__}")
-        self._execute_script(self.metadata.prescript)
-
-    def postprocess(self):
-        logger.debug(f"Postprocess: {self.__class__.__name__}")
-        self._execute_script(self.metadata.postscript)
-
-    def execute(self):
-        logger.debug(f"Execute: {self.__class__.__name__}")
-        return None
-
-    def run(self):
-
-        args, kwargs = self.inputs
-
-        self.preprocess()
-
-        error_msg = None
-
-        try:
-            logger.debug(f"Execute Start: {self.metadata.annotation.label}")
-            res = self.execute(*args, **kwargs)
-            logger.debug(f"Execute Done : {self.metadata.annotation.label}")
-        except Exception as error:
-            error_msg = error
-            logger.error(f"Execute Error! {error}")
-            res = None
-
-        self.postprocess()
-
-        if error_msg is not None:
-            raise error_msg
-
-        return res
-
-
-class SpModuleLocal(FyModule):
+class FyExecutorLocal(FyExecutor):
     """Call subprocess/shell command
     {PKG_PREFIX}/bin/xgenray
     """
@@ -409,8 +438,8 @@ class SpModuleLocal(FyModule):
 
         if not exec_file.exists():
             raise FileExistsError(module_root/exec_file)
-        elif exec_file.suffix in SpModuleLocal.script_call.keys():
-            command = [SpModuleLocal.script_call[exec_file.suffix], exec_file.as_posix()]
+        elif exec_file.suffix in FyExecutorLocal.script_call.keys():
+            command = [FyExecutorLocal.script_call[exec_file.suffix], exec_file.as_posix()]
         elif os.access(exec_file, os.X_OK):
             command = [exec_file.as_posix()]
         else:
@@ -428,6 +457,41 @@ class SpModuleLocal(FyModule):
         working_dir = self.envs.get("WORKING_DIR", "./")
 
         exitcode = self._execute_process(command, working_dir)
+
+        working_dir = os.getcwd()
+
+        execute: pathlib.Path = self._install_dir/self._desc.get("execute")
+        # logger.debug(f"CMD: {cmd} : {res}")
+        cmd = " ".join([execute]+args
+                       + [f"-{k}{v}" for k, v in kwargs.items() if len(k) == 1]
+                       + [f"--{k} {v}" for k, v in kwargs.items() if len(k) > 1])
+
+        logger.info(f"Execute Shell command [{working_dir}$ {cmd}]")
+        # @ref: https://stackoverflow.com/questions/21953835/run-subprocess-and-print-output-to-logging
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                # env=self.envs,
+                shell=True,
+                cwd=working_dir
+            )
+            # process_output, _ = command_line_process.communicate()
+
+            with process.stdout as pipe:
+                for line in iter(pipe.readline, b''):  # b'\n'-separated lines
+                    logger.info(line)
+
+            exitcode = process.wait()
+
+        except (OSError, subprocess.CalledProcessError) as error:
+            logger.error(
+                f"""Command failed! [{cmd}]
+                    STDOUT:[{error.stdout}]
+                    STDERR:[{error.stderr}]""")
+            raise error
+        return exitcode
         # try:
         #     command_line_process = subprocess.Popen(
         #         command,
@@ -452,7 +516,7 @@ class SpModuleLocal(FyModule):
         return {"EXITCODE": exitcode}
 
 
-class SpModulePy(FyModule):
+class FyExecutorPy(FyExecutor):
     def __init__(self, *args,   **kwargs):
         super().__init__(*args, **kwargs)
 

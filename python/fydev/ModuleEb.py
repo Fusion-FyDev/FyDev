@@ -10,7 +10,7 @@ import yaml
 # For  utils
 from spdm.util.logger import logger
 
-from fydev.FyHandler import FyModule
+from fydev.trash.FyHandler import FyModule
 
 # import module tool  from EasyBuild
 from easybuild.tools.filetools import remove_dir
