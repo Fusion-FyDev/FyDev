@@ -22,55 +22,67 @@ _TFyExecutor = typing.TypeVar('_TFyExecutor', bound='FyExecutor')
 
 class FyExecutor(object):
 
-    def __init__(self, exec_file, inputs=([], {}), package=None, session=None):
+    def __init__(self, exec: typing.Union[str, list],  package=None, session: typing.Dict = None):
+        """
+            Create a FyExecutor object
+            @param exec_file: the file to be executed
+            @param package: the package that contains the file
+            @param session: the session that contains the execution context
+        """
         super().__init__()
 
-        self._package = package
+        self._package = package  # type: FyPackage
 
-        self._session = session if session is not None else {}
+        self._session = session if session is not None else {}  # type: typing.Dict
 
-        if isinstance(exec_file, list):
-            exec_file = "/".join(exec_file)
-        self._exec_file = exec_file
+        self._exec = exec if isinstance(exec, list) else [exec]  # type: typing.List[str]
 
-        self._inputs = inputs
+        self._inputs = None
+
+        self._output = None
 
     def __call__(self, *args, **kwargs) -> typing.Any:
-        # if self._inputs is not None:
-        #     raise SyntaxError(f"Do not repeat the definition of the input parameters!")
+        """
+            Execute the function
+            @param args: positional arguments
+            @param kwargs: keyword arguments
+            @return: the result of the execution
+        """
 
-        if hasattr(self, '__value__'):
-            del self.__value__
+        self._output = None
+        self._inputs = (args, kwargs)
 
         if hasattr(self, 'signature'):
             del self.signature
 
-        self._inputs = (args, kwargs)
-
-        if get_value(self._session, "lazy_eval", False):
+        if self._session.get("lazy_eval", False):
             return self
         else:
             return self.__value__
 
-    @cached_property
+    @property
     def __value__(self) -> typing.Any:
-        logger.info(f"Start\t: {self.signature}")
+        if self._output is None:
+            logger.info(f"Start\t: {self.signature}")
 
-        args, kwargs = self._inputs
+            args, kwargs = self._inputs
 
-        args, kwargs = self.pre_process(*args, **kwargs)
+            args, kwargs = self.pre_process(*args, **kwargs)
 
-        res = self.post_process(self.execute(*args, **kwargs))
+            self._output = self.post_process(self.execute(*args, **kwargs))
 
-        logger.info(f"End\t: {self.signature}")
+            logger.info(f"End\t: {self.signature}")
 
-        return res
+        return self._output
 
     @cached_property
     def signature(self) -> str:
-        f_name = self._exec_file  # self._module_desc.get('name', 'unnamed')+'.'+'.'.join(map(str, self._rel_path))
+
+        f_name = self._exec  # self._module_desc.get('name', 'unnamed')+'.'+'.'.join(map(str, self._rel_path))
+
         if self._package is not None:
             f_name = f"{self._package.tag_str}/{f_name}"
+
         if self._inputs is None:
             args, kwargs = self._module_desc.get("inputs", ([], {}))
         else:
@@ -158,14 +170,21 @@ class FyExecutor(object):
 
     def execute(self, *args, **kwargs) -> typing.Any:
 
-        if self._package is not None:
-            exec_file = self._package.install_dir/self._exec_file
-        else:
-            exec_file = self._exec_file
+        if not isinstance(self._exec, pathlib.Path):
+
+            if self._package is not None:
+                exec_file = self._package.install_dir/self._exec[0]
+            else:
+                exec_file = self._exec[0]
+
+            exec_file = pathlib.Path(exec_file)
 
         if not os.access(exec_file, os.X_OK):
             raise RuntimeError(f"File {exec_file} is not executable!")
-        logger.info(f"Execute {exec_file}")
+
+        exec_cmd = [exec_file.as_posix(), *self._exec[1:]]
+        logger.info(f"Execute {' '.join(exec_cmd)}")
+
         return None
         error_msg = None
 

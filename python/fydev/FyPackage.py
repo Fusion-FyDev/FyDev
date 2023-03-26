@@ -6,7 +6,7 @@ import pathlib
 import pprint
 import typing
 from copy import copy, deepcopy
-from urllib.parse import urlparse
+from urllib.parse import urlparse, ParseResult
 
 import yaml
 
@@ -23,27 +23,39 @@ class FyPackage(object):
 
     MODULE_FILE_NAME = "fy_module.yaml"
 
-    def __init__(self, desc: typing.Union[str, typing.Mapping] = {},
-                 install_dir=None,
+    def __init__(self,
+                 description: typing.Mapping = {},
                  envs: typing.Mapping = None,
+                 install_dir=None,
+                 modulefile_url: ParseResult = None,
                  **kwargs):
         super().__init__()
 
-        self._desc = deepcopy(desc)
+        self._desc: dict = deepcopy(description)
 
-        self._envs = envs if envs is not None else {}
+        self._envs = collections.ChainMap(kwargs, envs) if envs is not None else kwargs
 
-        install_prefix = pathlib.Path(
-            get_value(self._envs, "install_prefix", None) or
-            get_value(self._envs, "FY_INSTALL_PREFIX", None) or
-            "~/fydev"
-        )
-        if install_dir is None:
-            self._install_dir = install_prefix/self.tag.name / \
-                f"{self.tag.version}-{self.tag.toolchain}{self.tag.versionsuffix}"
-        self._install_dir = pathlib.Path(install_dir).expanduser()
-        if self._install_dir.is_file:
-            self._install_dir = self._install_dir.parent
+        # if url is not None and url.scheme in ["file", "local", ""]:
+        #         install_dir = pathlib.Path(url.path).expanduser().parent
+        #     else:
+        #         install_dir = None
+
+        # if install_dir is None:
+        #     install_prefix = pathlib.Path(
+        #         get_value(self._envs, "install_prefix", None) or
+        #         get_value(self._envs, "FY_INSTALL_PREFIX", None) or
+        #         "~/fydev"
+        #     )
+        #     install_dir = install_prefix/self.tag.name / \
+        #         f"{self.tag.version}-{self.tag.toolchain}{self.tag.versionsuffix}"
+        # if self._install_dir.is_file:
+        #     self._install_dir = self._install_dir.parent
+        if install_dir is not None:
+            self._install_dir = pathlib.Path(install_dir).expanduser()
+        elif modulefile_url.scheme in ["file", "local", ""] and modulefile_url.path.endswith(FyPackage.MODULE_FILE_NAME):
+            self._install_dir = pathlib.Path(modulefile_url.path).expanduser().parent
+        else:
+            self._install_dir = None
 
     Tag = collections.namedtuple("Tag", ["name", "version", "toolchain", "versionsuffix"])
 
@@ -76,7 +88,7 @@ class FyPackage(object):
 
     @ property
     def installed(self) -> bool:
-        return self.install_dir.is_dir()
+        return self._install_dir is not None and self._install_dir.is_dir()
 
     def sanity_check(self) -> bool:
         return (self.install_dir/FyPackage.MODULE_FILE_NAME).is_file()
@@ -87,26 +99,48 @@ class FyPackage(object):
     def build(self) -> None:
         logger.info(f"Build package {self.tag_str}.")
 
-    def update_desc(self, repo) -> None:
-        # if not package.valid:
-        #     raise ModuleNotFoundError(f"Can not find module {tag}-{kwargs}")
+    def test(self) -> None:
+        logger.info(f"Test package {self.tag_str}.")
 
-        raise NotImplementedError()
+    def deploy(self) -> None:
+        logger.info(f"Deploy package {self.tag_str}.")
 
-    def install(self, install_prefix: pathlib.Path = None, force=False) -> None:
-        if install_prefix is not None:
-            self._install_prefix = pathlib.Path(install_prefix)
+    def update_description(self, desc: typing.Mapping, force=True) -> None:
+        """
+            从repo查找，并更新 package 的描述信息
+        """
+        logger.debug(desc)
+        self._desc.update(desc)
 
-        logger.info(f"Install package {self.tag_str} to {self.install_dir}.")
+    def install(self, install_dir: pathlib.Path = None, force=False) -> None:
+        if self.installed and not force:
+            raise FileExistsError(f"Package {self.tag_str} is already intalled !")
+        elif self.installed:
+            self.uninstall(force=force)
+
+        if install_dir is not None:
+            install_dir = pathlib.Path(install_dir)
+        elif self._install_dir is not None:
+            install_dir = self._install_dir
+        else:
+            raise ValueError(f"Install directory is not specified !")
+
+        logger.info(f"Install package {self.tag_str} to {install_dir}.")
+
+        self._install_dir = install_dir
+
+        # 创建module目录，如果目录存在则报错
+        self.install_dir.mkdir(mode=get_value(self._desc, "mode", 511), parents=force, exist_ok=force)
 
         self.fetch_source()
 
         self.build()
 
-        # 创建module目录，如果目录存在则报错
-        self.install_dir.mkdir(mode=get_value(self._desc, "mode", 511), parents=force, exist_ok=force)
+        self.test()
 
-        self.install_description(force=force)
+        self.deploy()
+
+        self.install_description()
 
     def install_description(self) -> None:
         if not self.install_dir.is_dir():
@@ -115,12 +149,12 @@ class FyPackage(object):
         with open(self.install_dir/FyPackage.MODULE_FILE_NAME, mode="w") as fid:
             yaml.dump(self._desc, fid)
 
-    def uninstall(self) -> None:
+    def uninstall(self, force=True) -> None:
         self.install_dir.rmdir()
 
-    def reinstall(self) -> None:
-        self.uninstall(force=True)
-        self.install(force=True)
+    def reinstall(self, force=True) -> None:
+        self.uninstall(force=force)
+        self.install(force=force)
 
     def load(self,  exec="", **kwargs) -> FyExecutor:
         """
@@ -128,7 +162,10 @@ class FyPackage(object):
             path: package 中 sub-module 路径
 
         """
-        exec = self._desc.setdefault("run", {}).setdefault("exec_file", exec)
+        if not self.installed:
+            raise ModuleNotFoundError(self.tag_str)
+
+        exec = self._desc.setdefault("run", {}).setdefault("exec", exec)
 
         logger.info(f"Load package {self.tag_str} [exec:{exec}].")
 
