@@ -97,3 +97,8 @@ class FyPackageModule(FyPackage):
         if result.returncode != 0:
             raise RuntimeError(f"Can not load module {self.module_name}.")
         return super().post_load(*args, **kwargs)
+
+    def load(self, *args, **kwargs):
+        self.pre_load()
+        super().load(*args, **kwargs)
+        self.post_load()

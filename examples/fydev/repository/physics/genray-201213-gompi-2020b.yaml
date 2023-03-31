@@ -6,5 +6,7 @@ information:
   version: 201213
   toolchain: gompi
   versionsuffix: -2020b
-
+install: genray-201213-gompi-2020b.eb
 install_dir: "{install_prefix}/genray/201213-gompi-2020b"
+run:
+  exec: "{install_dir}/bin/xgenray"

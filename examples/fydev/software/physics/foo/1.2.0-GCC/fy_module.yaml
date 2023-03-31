@@ -1,7 +1,0 @@
-information:
-  name: physics/foo
-  toolchain: GCC
-  version: 1.2.0
-  versionsuffix: ''
-run:
-  exec: bin/foo.exe
