@@ -454,6 +454,8 @@ class ModuleEb(FyModule):
             logger.debug(f'the ecs_with_res  is {ecs_with_res}')
 
             modulename = mod_tool.available(self.fullname)
+
+            
         if modulename:
 
             # 这里只是得到变量名，没有解析变量

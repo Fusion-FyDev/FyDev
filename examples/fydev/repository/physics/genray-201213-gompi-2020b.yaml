@@ -1,0 +1,10 @@
+$class: easybuild
+$id: genray-201213-gompi-2020b
+
+information:
+  name: genray
+  version: 201213
+  toolchain: gompi
+  versionsuffix: -2020b
+
+install_dir: "{install_prefix}/genray/201213-gompi-2020b"

@@ -29,8 +29,8 @@ if __name__ == '__main__':
     # with Session("~/workdir/TEST_GENRAY") as session:
     genray = fydev.physics.genray[{"version": "1.1.1", "toolchain": "GCC"}].bin.xgenray(dt=0.1, ne=1.0e19)
     foo = fydev.physics.foo[{"version": "1.2.0", "toolchain": "GCC"}](dt=0.1, ne=1.0e19)
-    # cql3d = repo.physics.cql3d(dt=0.1, input=genray)
 
+    # cql3d = repo.physics.cql3d(dt=0.1, input=genray)
     # repo.path[""].append("{FY_ROOT}")
     # repo.path["fydev."].append("python://")
     # repo.path["fydev."].append("python://xxx/python")

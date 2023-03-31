@@ -1,28 +1,22 @@
 
 import collections
 import collections.abc
-
 import inspect
 import os
 import pathlib
-import pprint
 import subprocess
 import sys
 import typing
-import uuid
 from functools import cached_property
-from copy import copy
 
 from spdm.util.logger import logger
-
-from .util import get_value
 
 _TFyExecutor = typing.TypeVar('_TFyExecutor', bound='FyExecutor')
 
 
 class FyExecutor(object):
 
-    def __init__(self, exec: typing.Union[str, list],  package=None, session: typing.Dict = None):
+    def __init__(self, *exec, _description: dict = typing.Dict[str, typing.Any], _package=None, _session=None, **parameters):
         """
             Create a FyExecutor object
             @param exec_file: the file to be executed
@@ -31,15 +25,21 @@ class FyExecutor(object):
         """
         super().__init__()
 
-        self._package = package  # type: FyPackage
+        self._package = _package  # type: FyPackage
 
-        self._session = session if session is not None else {}  # type: typing.Dict
+        self._session = _session if _session is not None else {}  # type: typing.Dict
 
-        self._exec = exec if isinstance(exec, list) else [exec]  # type: typing.List[str]
+        self._desc = _description if _description is not None else {}
+
+        self._exec = exec
+
+        self._parameters = parameters
 
         self._inputs = None
 
         self._output = None
+
+        logger.info(f"Load FyExecutor {self._package.id} [exec:{self._exec} parameters:{self._parameters}].")
 
     def __call__(self, *args, **kwargs) -> typing.Any:
         """
@@ -63,25 +63,20 @@ class FyExecutor(object):
     @property
     def __value__(self) -> typing.Any:
         if self._output is None:
-            logger.info(f"Start\t: {self.signature}")
-
             args, kwargs = self._inputs
-
             args, kwargs = self.pre_process(*args, **kwargs)
-
             self._output = self.post_process(self.execute(*args, **kwargs))
-
-            logger.info(f"End\t: {self.signature}")
 
         return self._output
 
     @cached_property
     def signature(self) -> str:
 
-        f_name = self._exec  # self._module_desc.get('name', 'unnamed')+'.'+'.'.join(map(str, self._rel_path))
+        f_name = self._exec
+        # self._module_desc.get('name', 'unnamed')+'.'+'.'.join(map(str, self._rel_path))
 
         if self._package is not None:
-            f_name = f"{self._package.tag_str}/{f_name}"
+            f_name = self._package.install_dir/f_name[0]
 
         if self._inputs is None:
             args, kwargs = self._module_desc.get("inputs", ([], {}))
@@ -159,19 +154,18 @@ class FyExecutor(object):
         return self.outputs
 
     def pre_process(self, *args, **kwargs):
-        logger.info(f"Pre-process")
-        # self._execute_script(self.metadata.prescript)
-        return args, kwargs
+        return self._package.pre_load(*args, **kwargs)
 
     def post_process(self, value):
-        logger.info(f"Post-process")
-        # self._execute_script(self.metadata.postscript)
-        return value
+        return self._package.post_load(value)
+
+    @property
+    def working_dir(self) -> pathlib.Path:
+        return pathlib.Path(os.getcwd())
 
     def execute(self, *args, **kwargs) -> typing.Any:
 
         if not isinstance(self._exec, pathlib.Path):
-
             if self._package is not None:
                 exec_file = self._package.install_dir/self._exec[0]
             else:
@@ -180,9 +174,10 @@ class FyExecutor(object):
             exec_file = pathlib.Path(exec_file)
 
         if not os.access(exec_file, os.X_OK):
-            raise RuntimeError(f"File {exec_file} is not executable!")
+            logger.warning(f"File {exec_file} is not executable!")
 
         exec_cmd = [exec_file.as_posix(), *self._exec[1:]]
+
         logger.info(f"Execute {' '.join(exec_cmd)}")
 
         return None
@@ -202,8 +197,6 @@ class FyExecutor(object):
 
         return res
 
-
-class FyExecutorDummy(FyExecutor):
     def _execute_module_command(self, cmd, working_dir=None):
         # py_command = self._execute_process([f"{os.environ['LMOD_CMD']}", 'python', *args])
         # process = os.popen(f"{os.environ['LMOD_CMD']} python {' '.join(args)}  ")

@@ -1,0 +1,10 @@
+$class: FyPackage
+$id: physics/genray-1.1.2-GCC
+information:
+  name: physics/genray
+  toolchain: GCC
+  version: 1.1.2
+  versionsuffix: ''
+install_dir: /home/salmon/workspace/FyDev/examples/fydev/software/physics/genray/1.1.2-GCC
+run:
+  exec: /home/salmon/workspace/FyDev/examples/fydev/software/physics/genray/1.1.2-GCC/bin/physics/genray

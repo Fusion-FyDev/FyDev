@@ -3,17 +3,18 @@ import collections.abc
 import os
 import pathlib
 import typing
-from urllib.parse import urlparse, ParseResult
+
 from spdm.common.DefaultSortedDict import DefaultSortedDict
 from spdm.common.LazyCall import LazyCall
 from spdm.util.logger import logger
-from spdm.util.utilities import fetch_request, replace_tokens
+from spdm.util.misc import fetch_request
+
 from .FyPackage import FyPackage
 
 
 class PathManager(DefaultSortedDict):
     """
-    以有序字典管理路径，根据键值作为前缀匹配path ，得到相应的实际目录。
+    以有序字典管理路径， 根据键值作为前缀匹配path ，得到相应的实际目录。
     """
 
     def __init__(self,  *args, envs={},  **kwargs):
@@ -66,7 +67,7 @@ class PathManager(DefaultSortedDict):
 
         return self._normalize_uri(path="/".join(path), **kwargs)
 
-    def glob(self, tag: FyPackage.Tag,  **kwargs) -> typing.Iterator[typing.Tuple[typing.Mapping, ParseResult]]:
+    def glob(self, tag: FyPackage.Tag,  **kwargs) -> typing.Iterator[typing.Tuple[str, typing.Mapping]]:
         """
         遍历 path list 找到所有有效的 description 文件，返回 description 和 url
         @param tag: FyPackage.Tag
@@ -82,15 +83,7 @@ class PathManager(DefaultSortedDict):
             if not ((key == "" or key.endswith('.')) and tag.name.startswith(key)):
                 continue
             for url in paths:
-                url = urlparse(url.format_map(token_map))
-                try:
-                    desc = fetch_request(url)
-                except Exception:
-                    continue
-                else:
-                    desc.setdefault("information", {}).update(tag._asdict())
-                    desc.setdefault("run", {}).update(kwargs)
-                    yield desc,  url
+                yield url.format_map(token_map), tag, kwargs
 
     def find(self, *args, **kwargs) -> typing.Tuple[typing.Mapping, str]:
         """ 找到第一个满足要求的 description 文件，返回 description 和 url
@@ -98,11 +91,11 @@ class PathManager(DefaultSortedDict):
             @raise StopIteration: 找不到满足要求的 description 文件，则抛出异常
         """
         try:
-            desc, url = next(self.glob(*args, **kwargs))
+            url = next(self.glob(*args, **kwargs))
         except StopIteration:
             raise ModuleNotFoundError(f"Can not find description for {args} !")
         else:
-            return desc, url
+            return url
 
 
 _TFyRepository = typing.TypeVar('_TFyRepository', bound='FyRepository')
@@ -161,8 +154,13 @@ class FyRepository(object):
 
     def _glob(self, _search_paths: PathManager, *args,  **kwargs) -> typing.Iterator[FyPackage]:
         """ 找到所有满足要求的 module"""
-        for desc, url in _search_paths.glob(*args,  **kwargs):
-            yield FyPackage(desc, modulefile_url=url, envs=self._envs)
+        for url, tag, run_parameters in _search_paths.glob(*args,  **kwargs):
+            try:
+                package = FyPackage.create(url, tag=tag, run=run_parameters, envs=self._envs)
+            except ModuleNotFoundError:
+                continue    # 忽略无法创建的 package
+            else:
+                yield package  # 返回 package
 
     def glob(self, *args, **kwargs) -> typing.Iterator[FyPackage]:
         yield from self._glob(self._install_path, *args, **kwargs)
@@ -192,7 +190,7 @@ class FyRepository(object):
         else:
             try:
                 package = next(self._glob(self._repository_path, *args, **kwargs))
-                package._install_dir = None
+
             except StopIteration as _:
                 raise ModuleNotFoundError(f"Can not find module for {args} in repository !")
 

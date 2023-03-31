@@ -18,7 +18,7 @@ import yaml
 
 from spdm.util.logger import logger
 
-from .trash.FyHandler import FyModule
+from .FyHandler import FyModule
 from .StandardModule import  StandardModule
 import .EasyBuildPa as bs
 

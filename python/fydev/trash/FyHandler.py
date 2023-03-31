@@ -9,7 +9,7 @@ import typing
 import yaml
 from spdm.util.logger import logger
 from ..FyPackage import FyPackage
-from ..util import get_value, fetch_request, replace_tokens
+from .util import get_value, fetch_request, replace_tokens
 from copy import copy
 
 FY_MODULE_FILE_NAME = "fy_module"
