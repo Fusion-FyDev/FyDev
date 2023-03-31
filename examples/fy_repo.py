@@ -15,21 +15,26 @@ if __name__ == '__main__':
     fydev = FyRepository({
         "name": "FyDev",
         "install_path": {
-            "": [f"{{FY_ROOT}}/software/{FY_TAG_TEMPLATE}/fy_module.yaml",
-                 "module:///work/modulefiles/all", ],
-            "physics.": [f"/work/software/physics/{FY_TAG_TEMPLATE}/fy_module.yaml",
-                         f"/home/salmon/workspace/FyDev/tests/ModuleRepository/{FY_TAG_TEMPLATE}/fy_module.yaml"]
+            "": ["module://{name}/{version}-{toolchain}{versionsuffix}",
+                 "{FY_ROOT}/software/{name}/{version}-{toolchain}{versionsuffix}/fy_module.yaml",
+                 ],
         },
         "repository_path": {
-            "": ["{FY_ROOT}/repository/{name}-{version}-{toolchain}{versionsuffix}.yaml",
+            "": ["eb://{name}-{version}-{toolchain}{versionsuffix}",
+                 "{FY_ROOT}/repository/{name}-{version}-{toolchain}{versionsuffix}.yaml",
                  "http://fydev.asipp.ac.cn/modules/{name}-{version}-{toolchain}{versionsuffix}", ]
         }}
     ).entry
 
-    # with Session("~/workdir/TEST_GENRAY") as session:
-    genray = fydev.physics.genray[{"version": "1.1.1", "toolchain": "GCC"}](dt=0.1, ne=1.0e19)
+    # module load physics/genray/1.1.1-gompi-2020b
+    # ${EBROOTGENRAY}/bin/xgenray --dt 01 --ne 1.0e19
+    genray = fydev.physics.genray[{"version": "1.1.1", "toolchain": "gompi",
+                                   "versionsufix": "-2020b"}](nstep=100, dt=0.1, ne=1.0e19)
 
-    cql3d = fydev.physics.cql3d[{"version": "1.2.0", "toolchain": "GCC"}].bin.cql3d(dt=0.1, ne=1.0e19, input=genray)
+    # module load physics/cql3d/1.2.0-GCC-10.2.0
+    # ${EBROOTCQL3D}/bin/cql3d --dt 01  --input <genray>
+    cql3d = fydev.physics.cql3d[{"version": "1.2.0", "toolchain": "GCC",
+                                 "versionsufix": "-10.2.0"}].bin.cql3d(dt=0.1, input=genray.nc_file)
 
     print(cql3d.result)
 

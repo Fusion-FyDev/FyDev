@@ -6,7 +6,18 @@ information:
   version: 201213
   toolchain: gompi
   versionsuffix: -2020b
+
 install: genray-201213-gompi-2020b.eb
+
 install_dir: "{install_prefix}/genray/201213-gompi-2020b"
+
 run:
-  exec: "{install_dir}/bin/xgenray"
+  exec: "cd {output_dir}; {install_dir}/bin/xgenray --dt {dt} --ne {ne}  {nstep}"
+
+  input:
+    nstep: 10
+    dt: 1.0
+    ne: 1.0e19
+
+  output:
+    nc_file: "{output_dir}/genray.nc"

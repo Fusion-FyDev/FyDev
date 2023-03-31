@@ -9,4 +9,4 @@ information:
 install: genray-201213-gompi-2020b.eb
 install_dir: /home/salmon/workspace/FyDev/examples/fydev/software/genray/201213-gompi-2020b
 run:
-  exec: '{install_dir}/bin/{exec}'
+  exec: '/home/salmon/workspace/FyDev/examples/fydev/software/genray/201213-gompi-2020b/bin/xgenray'
