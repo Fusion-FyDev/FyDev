@@ -1,0 +1,22 @@
+$class: FyPackage
+$id: "{name}-201213-gompi-2020b"
+
+information:
+  name: atok
+  version: "201213"
+  toolchain: matlab
+  suffix: 2020b
+
+  contribution:
+    - Zhang San ...
+
+  license: MIT
+
+install: genray-201213-gompi-2020b.eb
+
+install_dir: "{install_prefix}/{name}/201213-gompi-2020b"
+
+run:
+  as_task: "/home/salmon/workspace/FyDev/examples/fydev/software/atok/.fydev/wrapper/ATOC"
+
+

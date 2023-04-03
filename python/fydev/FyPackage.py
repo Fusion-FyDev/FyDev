@@ -13,6 +13,8 @@ import yaml
 from spdm.util.logger import logger
 from spdm.util.misc import get_value, replace_tokens
 
+from spdm.flow.task import create_task, Task
+
 from .FyCommon import *
 from .FyExecutor import FyExecutor
 
@@ -20,15 +22,19 @@ _TFyPackage = typing.TypeVar('_TFyPackage', bound='FyPackage')
 
 FY_MODULE_TEMPLTE = {
     "$class": "FyPackage",
-    "$id": "{name}-{version}-{toolchain}{versionsuffix}",
+    "$id": "{name}-{version}-{toolchain}{suffix}",
     "information": {
         "name": "{name}",
         "version": "{version}",
         "toolchain": "{toolchain}",
-        "versionsuffix": "{versionsuffix}",
+        "suffix": "{suffix}",
     },
-    "install_dir": "{FY_INSTALL_DIR}/{name}/{version}-{toolchain}{versionsuffix}",
-    "run": {"exec": "{install_dir}/bin/{exec}"},
+    "install_dir": "{FY_INSTALL_DIR}/{name}/{version}-{toolchain}{suffix}",
+    "run": {
+        "exec": "{install_dir}/bin/{name}",
+        # "inputs": [],
+        # "outputs": [],
+    },
 }
 
 
@@ -47,7 +53,7 @@ class FyPackage(object):
 
     @staticmethod
     def _parser_description(desc: typing.Union[str, typing.Mapping[str, typing.Any]] = None,
-                            version=None, toolchain="", versionsuffix="", envs={},
+                            version=None, toolchain="", suffix="", envs={},
                             **kwargs):
         """
         Parser description, which can be a string, a mapping, or None.
@@ -58,12 +64,12 @@ class FyPackage(object):
         :param desc: a string, a mapping, or None
         :param version: version
         :param toolchain: toolchain
-        :param versionsuffix: version suffix
+        :param suffix: version suffix
         :param kwargs: additional arguments
         """
         tokens = {"version": version,
                   "toolchain": toolchain,
-                  "versionsuffix": versionsuffix}
+                  "suffix": suffix}
 
         if isinstance(desc, collections.abc.Mapping):
             pass
@@ -72,10 +78,9 @@ class FyPackage(object):
         elif not isinstance(desc, str):
             raise TypeError(type(desc))
         else:
-            url = desc.format_map(os.environ)
+            url = urlparse(desc.format_map(os.environ))
+
             desc = deepcopy(FY_MODULE_TEMPLTE)
-            desc["$url"] = url
-            url = urlparse(url)
 
             if url.query and url.scheme not in ['http', 'https']:
                 # convert query string to dict
@@ -88,7 +93,7 @@ class FyPackage(object):
                     desc.update(yaml.safe_load(response.text))  # parse the response text as yaml
                 else:
                     raise ModuleNotFoundError(url)
-            elif url.scheme in ['local', 'file']:
+            elif url.scheme in ['local', 'file'] or (url.scheme == "" and url.path.endswith(FyPackage.MODULE_FILE_NAME)):
                 path = url.netloc+url.path
                 if not os.path.isfile(path):
                     raise ModuleNotFoundError(path)
@@ -99,12 +104,11 @@ class FyPackage(object):
 
                 if path.endswith(FyPackage.MODULE_FILE_NAME):
                     desc["install_dir"] = pathlib.Path(os.path.dirname(path))
-            elif url.scheme == '':
-                desc = FY_MODULE_TEMPLTE
-                tokens["name"] = url.path.replace('.', '/')
             else:
-                desc["$class"] = url.scheme
+                desc["$class"] = url.scheme or 'FyPackage'
                 tokens["name"] = (url.netloc+url.path).replace('.', '/')
+
+            desc["$url"] = url.geturl()
 
         # 遍历desc，对其中类型为str的value，用tokens做format_map
 
@@ -128,10 +132,10 @@ class FyPackage(object):
         else:  # unknown class
             raise ModuleNotFoundError(class_desc)
 
-    def __init__(self,  *args, envs=None, **kwargs):
+    def __init__(self,  *args, envs=None, auto_install=False, **kwargs):
         """
         Initialize a FyPackage instance.
-        :param args: description, version, toolchain, versionsuffix
+        :param args: description, version, toolchain, suffix
         :param session: session information for the package
         :param kwargs: additional arguments
         """
@@ -139,13 +143,19 @@ class FyPackage(object):
 
         self._desc, kwargs = self._parser_description(*args, **kwargs)
 
-        self._desc.update(kwargs)  # update description with additional arguments
+        if len(kwargs) > 0:
+            logger.debug(f"Ignore kwargs {kwargs.keys()}")
+        # self._desc.update(kwargs)  # update description with additional arguments
 
         self._desc["$id"] = self.id
 
         self._envs = envs
 
-    Tag = collections.namedtuple("Tag", ["name", "version", "toolchain", "versionsuffix"],
+        self._auto_install = auto_install
+
+        logger.debug(f"Initialize package {self.id}")
+
+    Tag = collections.namedtuple("Tag", ["name", "version", "toolchain", "suffix"],
                                  defaults=("", "", "", ""))
 
     def __str__(self) -> str:
@@ -156,23 +166,16 @@ class FyPackage(object):
         information: dict = self._desc.get("information", {})
         return FyPackage.Tag(name=information.get("name", "unnamed"),
                              version=information.get("version", "1.0.0"),
-                             toolchain=information.get("toolchain", "dummy"),
-                             versionsuffix=information.get("versionsuffix", ""))
+                             toolchain=information.get("toolchain", ""),
+                             suffix=information.get("suffix", ""))
 
     @property
     def tag_suffix(self) -> str:
-        suffix = str(self.tag.version)
-        if self.tag.toolchain not in ['', None]:
-            suffix += f"-{self.tag.toolchain}{self.tag.versionsuffix}"
-        return suffix
-
-    @property
-    def tag_path(self) -> str:
-        return f"{self.tag.name}/{self.tag_suffix}"
+        return '-'.join([str(self.tag.version), self.tag.toolchain, self.tag.suffix])
 
     @property
     def id(self) -> str:
-        return f"{self.tag.name}-{self.tag_suffix}"
+        return f"{self.tag.name.replace('/','_')}-{self.tag_suffix}"
 
     @property
     def description(self) -> dict:
@@ -182,9 +185,9 @@ class FyPackage(object):
     def valid(self) -> bool:
         return len(self.description) > 0
 
-    @cached_property
+    @property
     def install_dir(self) -> pathlib.Path:
-        return pathlib.Path(self._desc.setdefault("install_dir", f"{FY_INSTALL_DIR}/{self.tag_path}")).resolve().expanduser()
+        return pathlib.Path(self._desc.setdefault("install_dir", f"{FY_INSTALL_DIR}/{self.tag.name}/{self.tag_suffix}")).resolve().expanduser()
 
     @property
     def installed(self) -> bool:
@@ -195,15 +198,14 @@ class FyPackage(object):
 
     @property
     def source_dir(self) -> pathlib.Path:
-        return pathlib.Path(FY_SOURCE_DIR)/self.tag.name
+        return pathlib.Path(FY_SOURCE_DIR)/self.tag.name / self.tag_suffix
 
     def fetch_source(self) -> None:
         logger.info(f"Fetch source of  {self.id} to {self.source_dir}.")
 
     @property
     def build_dir(self) -> pathlib.Path:
-        return pathlib.Path(FY_BUILD_DIR)/self.tag.name / \
-            f"{self.tag.version}-{self.tag.toolchain}{self.tag.versionsuffix}"
+        return pathlib.Path(FY_BUILD_DIR)/self.tag.name / self.tag_suffix
 
     def build(self) -> None:
         logger.info(f"Build {self.id} in {self.build_dir}.")
@@ -214,8 +216,8 @@ class FyPackage(object):
     def deploy(self) -> None:
         """
         Deploy the package to the specified directory, or the default directory.
-        Default directory is $FY_INSTALL_PREFIX/$name/$version-$toolchain$versionsuffix
-        or ~/fydev/$name/$version-$toolchain$versionsuffix if $FY_INSTALL_PREFIX is not set.
+        Default directory is $FY_INSTALL_PREFIX/$name/$version-$toolchain$suffix
+        or ~/fydev/$name/$version-$toolchain$suffix if $FY_INSTALL_PREFIX is not set.
 
         :param install_dir: the directory to deploy the package
 
@@ -245,7 +247,7 @@ class FyPackage(object):
             install_prefix = self._desc.get("install_prefix", None) or FY_INSTALL_DIR
 
             install_dir = pathlib.Path(install_prefix)/self.tag.name / \
-                f"{self.tag.version}-{self.tag.toolchain}{self.tag.versionsuffix}"
+                f"{self.tag.version}-{self.tag.toolchain}{self.tag.suffix}"
         else:
             install_dir = pathlib.Path(install_dir)
 
@@ -284,6 +286,8 @@ class FyPackage(object):
 
         logger.info(f"Install description of {self.id} to {self.install_dir}.")
 
+        self._desc = replace_tokens(self._desc, self._desc)
+
         with open(self.install_dir/FyPackage.MODULE_FILE_NAME, mode="w") as fid:
             yaml.dump(self._desc, fid)
 
@@ -310,14 +314,27 @@ class FyPackage(object):
     def post_load(self, value=None):
         return value
 
-    def load(self,  *args, **kwargs) -> FyExecutor:
+    def load(self, exec=None, /, **kwargs) -> Task:
         """
         加载package, 并返回一个FyExecutor对象
         """
-        if not self.installed:
-            self.install()
+        logger.debug(f"Load package {self.id}")
 
-        if self._desc.get("install_dir", None) is None:
-            self._desc["install_dir"] = self.install_dir.as_posix()
-            self._desc = replace_tokens(self._desc, self._desc)
-        return FyExecutor(*args, _description=self._desc.get("run", {}), _package=self,  ** kwargs)
+        if self.installed:
+            pass
+        elif self._auto_install:
+            self.install()
+        else:
+            raise ModuleNotFoundError(f"Can not find package {self.id}!")
+
+        run_desc = copy(self._desc.get("run", {}))
+
+        if isinstance(run_desc, str):
+            pass
+        elif isinstance(run_desc, collections.abc.Mapping):
+            if exec is not None:
+                run_desc["exec"] = exec
+
+            run_desc = replace_tokens(run_desc, self._desc)
+
+        return FyExecutor.create(run_desc,  path=self.install_dir, package=self,  ** kwargs)

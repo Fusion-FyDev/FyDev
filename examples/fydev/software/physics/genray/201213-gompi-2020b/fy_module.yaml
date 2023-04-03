@@ -1,12 +1,24 @@
-$class: easybuild
+$class: FyPackage
 $id: genray-201213-gompi-2020b
-$url: file:///home/salmon/workspace/FyDev/examples/fydev/repository/physics/genray-201213-gompi-2020b.yaml
 information:
   name: genray
   toolchain: gompi
   version: 201213
   versionsuffix: -2020b
+
 install: genray-201213-gompi-2020b.eb
+
 install_dir: /home/salmon/workspace/FyDev/examples/fydev/software/genray/201213-gompi-2020b
+
 run:
-  exec: '/home/salmon/workspace/FyDev/examples/fydev/software/genray/201213-gompi-2020b/bin/xgenray'
+  exec:
+    - "cd {output_dir}"
+    - "{install_dir}/bin/xgenray --dt {dt} --ne {ne}  {nstep}"
+
+  input:
+    nstep: 10
+    dt: 1.0
+    ne: 1.0e19
+
+  output:
+    nc_file: "{output_dir}/genray.nc"

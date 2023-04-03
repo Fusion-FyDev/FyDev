@@ -7,6 +7,12 @@ information:
   toolchain: gompi
   versionsuffix: -2020b
 
+  contribution:
+    - Zhang San ...
+
+  license: MIT
+  
+
 install: genray-201213-gompi-2020b.eb
 
 install_dir: "{install_prefix}/genray/201213-gompi-2020b"
@@ -14,10 +20,10 @@ install_dir: "{install_prefix}/genray/201213-gompi-2020b"
 run:
   exec: "cd {output_dir}; {install_dir}/bin/xgenray --dt {dt} --ne {ne}  {nstep}"
 
-  input:
+  inputs:
     nstep: 10
     dt: 1.0
     ne: 1.0e19
 
-  output:
+  outputs:
     nc_file: "{output_dir}/genray.nc"

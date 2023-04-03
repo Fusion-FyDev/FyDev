@@ -23,19 +23,15 @@ class FyPackageModule(FyPackage):
         del self._desc["install_dir"]
 
     def _lmod(self, *args, **kwargs):
-        cmd = [self._lmod_cmd, "python", *args] + \
-            [(f"--{k}" if v in ['None', True] else f"--{k}={v}") for k, v in kwargs.items()]
 
-        try:
-            result = subprocess.run(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    encoding="utf-8")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error when executing command: {' '.join(cmd)}")
-            logger.error(e.stderr)
-            raise e
-        else:
-            exec(result.stdout)
-            return result
+        process = subprocess.run([self._lmod_cmd, "python", *args],
+                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.PIPE,
+                                 encoding="utf-8", **kwargs)
+
+        exec(process.stdout)
+
+        return process
 
     @cached_property
     def module_name(self) -> str:
@@ -43,12 +39,7 @@ class FyPackageModule(FyPackage):
 
     @property
     def valid(self) -> bool:
-        try:
-            res = self._lmod("is-avail", self.module_name)
-        except subprocess.CalledProcessError:
-            return False
-        else:
-            return res.returncode == 0
+        return self._lmod("is-avail", self.module_name).returncode == 0
 
     @property
     def installed(self) -> bool:
@@ -79,6 +70,10 @@ class FyPackageModule(FyPackage):
         else:
             logger.warning(f"Package {self.module_name} is installed.")
 
+    def install_description(self) -> None:
+        self._desc["$class"] = "module"
+        return super().install_description()
+
     def uninstall(self, force=True) -> None:
         raise RuntimeError(f"Can not uninstall 'module'!")
 
@@ -87,15 +82,11 @@ class FyPackageModule(FyPackage):
 
     def pre_load(self, *args, **kwargs):
         args, kwargs = super().pre_load(*args, **kwargs)
-        result = self._lmod("load", self.module_name)
-        if result.returncode != 0:
-            raise RuntimeError(f"Can not load module {self.module_name}.")
+        self._lmod("load", self.module_name)
         return args, kwargs
 
     def post_load(self, *args, **kwargs):
-        result = self._lmod("unload", self.module_name)
-        if result.returncode != 0:
-            raise RuntimeError(f"Can not load module {self.module_name}.")
+        self._lmod("unload", self.module_name)
         return super().post_load(*args, **kwargs)
 
     def load(self, *args, **kwargs):

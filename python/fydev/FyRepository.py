@@ -27,21 +27,21 @@ class PathManager(DefaultSortedDict):
     def _make_tag(self, name="unnamed",
                   version="1.0.0",
                   toolchain="dummy",
-                  versionsuffix="", **kwargs):
+                  suffix="", **kwargs):
         """
         将参数转换为 FyPackage.Tag
         @param name: 包名
         @param version: 版本号
         @param toolchain: 工具链
-        @param versionsuffix: 版本后缀
+        @param suffix: 版本后缀
         @param kwargs: 附加参数
         @return: FyPackage.Tag, kwargs
         """
-        if versionsuffix != "" and versionsuffix[0] != "-":
-            versionsuffix = f"-{versionsuffix}"
+        if suffix != "" and suffix[0] != "-":
+            suffix = f"-{suffix}"
         return FyPackage.Tag(name=name.format(self._envs),
                              version=version, toolchain=toolchain,
-                             versionsuffix=versionsuffix), kwargs
+                             suffix=suffix), kwargs
 
     def _normalize_uri(self, path: typing.Union[str, typing.List],
                        **kwargs) -> typing.Tuple[FyPackage.Tag, typing.Dict]:
@@ -51,7 +51,9 @@ class PathManager(DefaultSortedDict):
         @param kwargs: 附加参数
         @return: FyPackage.Tag, kwargs
         """
-        if isinstance(path, str):
+        if isinstance(path, FyPackage.Tag):
+            return path, kwargs
+        elif isinstance(path, str):
             return self._make_tag(path, **kwargs)
         elif isinstance(path, collections.abc.Mapping):
             return self._normalize_uri(**path, **kwargs)
@@ -73,9 +75,7 @@ class PathManager(DefaultSortedDict):
         @param tag: FyPackage.Tag
         @param kwargs: 附加参数
         """
-
-        if not isinstance(tag, FyPackage.Tag):
-            tag, kwargs = self._normalize_uri(tag, **kwargs)
+        tag, kwargs = self._normalize_uri(tag, **kwargs)
 
         token_map = collections.ChainMap(tag._asdict(), self._envs)
 
@@ -126,7 +126,7 @@ class FyRepository(object):
         self._install_path[""].extend(self._envs.get("FY_INSTALL_PATH", "").split(":"))
 
         if len(self._install_path[""]) == 0:
-            self._install_path[""].append(f"~/fydev/{{name}}/{{version}}-{{toolchain}}{{versionsuffix}}")  # 默认安装路径
+            self._install_path[""].append(f"~/fydev/{{name}}/{{version}}-{{toolchain}}{{suffix}}")  # 默认安装路径
 
         self._repository_path = PathManager(self._configure.get("repository_path"), envs=self._envs)  # 软件包的仓库路径
 
@@ -152,25 +152,32 @@ class FyRepository(object):
     def default_install_path(self) -> pathlib.Path:
         return self._install_path[""][0]
 
-    def _glob(self, _search_paths: PathManager, *args,  **kwargs) -> typing.Iterator[FyPackage]:
+    def _glob(self, _search_paths: PathManager, *args, envs=None, **kwargs) -> typing.Iterator[FyPackage]:
         """ 找到所有满足要求的 module"""
-        for url, tag, run_parameters in _search_paths.glob(*args,  **kwargs):
+        if isinstance(envs, collections.abc.Mapping):
+            envs = collections.ChainMap(envs, self._envs)
+        else:
+            envs = self._envs
+
+        for url, tag, create_kwargs in _search_paths.glob(*args,  **kwargs):
             try:
-                package = FyPackage.create(url, tag=tag, run=run_parameters, envs=self._envs)
+                package = FyPackage.create(url, tag=tag, envs=envs,  **create_kwargs)
             except ModuleNotFoundError:
                 continue    # 忽略无法创建的 package
             else:
-                yield package  # 返回 package
+                if not package.valid:
+                    continue
+                else:
+                    yield package  # 返回 package
 
     def glob(self, *args, **kwargs) -> typing.Iterator[FyPackage]:
-        yield from self._glob(self._install_path, *args, **kwargs)
+        yield from self._glob(self._install_path, *args,  **kwargs)
 
-    def find(self, *args, **kwargs) -> FyPackage:
+    def find(self, *args,  **kwargs) -> FyPackage:
         """ 找到第一个满足要求的 module"""
         try:
-            package = next(self.glob(*args, **kwargs))
+            package = next(self.glob(*args,  **kwargs))
         except StopIteration:
-            # logger.debug(f"Can not find module for {args} in  install_path !")
             raise ModuleNotFoundError(f"Can not find module for {args} !")
         else:
             return package

@@ -1,0 +1,24 @@
+$class: FyPackage
+$id: phys_genray-201213-gompi-2020b
+$url: phys/genray
+information:
+  name: phys/genray
+  suffix: 2020b
+  toolchain: gompi
+  version: "201213"
+install_dir: /home/salmon/workspace/FyDev/examples/fydev/software/phys/genray/201213-gompi2020b
+run:
+  # "matlab {install_dir}/phys/atok.m input1=input1.txt input2=input2.txt output=<working_dir> "
+
+  exec: "matlab {install_dir}/phys/atok.m input1={input1} input2={input2} output={working_dir}"
+
+  inputs:
+    input1: input1.txt
+    input2: input2.txt
+    Ip: 1.0
+    beta: 1.0e9
+
+  outputs:
+    profiles: "output.nc"
+    betap: "output.json/betap"
+    psi: "psi.text"

@@ -18,16 +18,16 @@ if __name__ == '__main__':
 
     envs = {k: v for k, v in os.environ.items() if k.startswith("FY_")}
 
-    pkg: FyPackage = FyPackage.create("file://{FY_ROOT}/repository/physics/genray-201213-gompi-2020b.yaml",
-                                      version="201213", toolchain="gompi",
-                                      versionsuffix="-2020b", envs=envs)
-    # "module://physics/genray?version=1.1.1&toolchain=GCC",
+    pkg: FyPackage = FyPackage.create("phys/genray", version="201213", toolchain="gompi", suffix="2020b",
+                                      # "file://{FY_ROOT}/repository/physics/genray-201213-gompi-2020b.yaml",
+                                      # "module://physics/genray?version=1.1.1&toolchain=GCC",
+                                      envs=envs,
+                                      auto_install=True)
 
-    logger.debug(pkg.valid)
-    
-    pkg.install()
-
-    genray = pkg.load("bin/xgenray", input="input.dat", output="output.dat", verbose=True)
+    genray = pkg.load("bin/xgenray -i {input} -o {output} -v {verbose}",
+                      input="input.dat",
+                      output="output.dat",
+                      verbose=True)
 
     # logger.debug(pkg.description)
 

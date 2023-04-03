@@ -1,4 +1,3 @@
-
 import collections
 import collections.abc
 import inspect
@@ -7,39 +6,112 @@ import pathlib
 import subprocess
 import sys
 import typing
+from copy import copy
 from functools import cached_property
-
+import shutil
 from spdm.util.logger import logger
+from spdm.util.misc import fetch_request
+
+
+class FyExecutorResult:
+    """
+    Result of FyExecutor
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    @property
+    def STDOUT(self):
+        return self._stdout
+
+    @property
+    def STDERROR(self):
+        return self._stderr
+
+    def __getitem__(self) -> typing.Any:
+
+        return NotImplemented
+
 
 _TFyExecutor = typing.TypeVar('_TFyExecutor', bound='FyExecutor')
 
 
 class FyExecutor(object):
 
-    def __init__(self, *exec, _description: dict = typing.Dict[str, typing.Any], _package=None, _session=None, **parameters):
+    @classmethod
+    def create(cls, desc, *args, **kwargs):
+        if cls is not FyExecutor:
+            return cls(desc, *args, **kwargs)
+        elif isinstance(desc, str):
+            desc = fetch_request(desc)
+
+        if not isinstance(desc, collections.abc.Mapping):
+            raise TypeError(f"desc must be a mapping, but got {type(desc)}")
+
+        if "exec" not in desc:
+            raise KeyError(f"desc must contain key 'exec'")
+
+        return FyExecutor(desc, *args, **kwargs)
+
+    def __init__(self, desc, /, working_dir=None,  path=None, package=None, session=None, **kwargs):
         """
             Create a FyExecutor object
-            @param exec_file: the file to be executed
-            @param package: the package that contains the file
+            @param desc: the description of the executor,
+                        or the executable to be executed
+            @param package: the package that contains the executor
             @param session: the session that contains the execution context
+            @param args: positional arguments as the argument of the executor
+            @param kwargs: keyword arguments as the description of the executor
         """
         super().__init__()
 
-        self._package = _package  # type: FyPackage
+        self._package = package  # parent package/holder
 
-        self._session = _session if _session is not None else {}  # type: typing.Dict
+        self._session = session if session is not None else {}  # execution context
 
-        self._desc = _description if _description is not None else {}
+        if isinstance(desc, collections.abc.Mapping):
+            self._desc: dict = copy(desc)
+            self._desc.update(kwargs)
+            desc = self._desc.get("exec", "")
+        else:
+            self._desc = {**kwargs}
 
-        self._exec = exec
+        if isinstance(desc, str):
+            desc = desc.split(' ')
+        elif isinstance(desc, collections.abc.Sequence):
+            desc = list(desc)
+        else:
+            desc = [desc]
 
-        self._parameters = parameters
+        self._desc["exec"] = desc
 
-        self._inputs = None
+        self._exec = desc
 
-        self._output = None
+        if not isinstance(self._exec, list):
+            raise TypeError(f"exec must be a list, but got {type(self._exec)}")
 
-        logger.info(f"Load FyExecutor {self._package.id} [exec:{self._exec} parameters:{self._parameters}].")
+        if path is None:
+            path = getattr(self._package, 'install_dir', None)
+
+        if path is not None:
+            self._exec[0] = (pathlib.Path(path)/self._exec[0]).resolve().expanduser()
+        else:
+            self._exec[0] = pathlib.Path(self._exec[0]).resolve().expanduser()
+
+        if working_dir is None:
+            working_dir = getattr(self._session, "working_dir", None)
+
+        if working_dir is not None:
+            self._working_dir = pathlib.Path(working_dir)
+        else:
+            self._working_dir = None
+
+        self._inputs = self._desc.setdefault("inputs", ((), {}))
+
+        self._outputs = self._desc.setdefault("outputs", {})
+
+        logger.debug(f"Load FyExecutor {getattr(self._package,'id','unnamed')}. {self._exec}")
 
     def __call__(self, *args, **kwargs) -> typing.Any:
         """
@@ -49,11 +121,9 @@ class FyExecutor(object):
             @return: the result of the execution
         """
 
-        self._output = None
         self._inputs = (args, kwargs)
 
-        if hasattr(self, 'signature'):
-            del self.signature
+        self._output = None
 
         if self._session.get("lazy_eval", False):
             return self
@@ -62,24 +132,24 @@ class FyExecutor(object):
 
     @property
     def __value__(self) -> typing.Any:
-        if self._output is None:
-            args, kwargs = self._inputs
-            args, kwargs = self.pre_process(*args, **kwargs)
-            self._output = self.post_process(self.execute(*args, **kwargs))
+        if self._outputs is not None:
+            return self._outputs
 
-        return self._output
+        args, kwargs = self._inputs
+        args, kwargs = self.pre_process(*args, **kwargs)
+        self._outputs = self.post_process(self._execute(*args, **kwargs))
+        return self._outputs
 
-    @cached_property
+    @property
+    def working_dir(self) -> pathlib.Path:
+        return self._working_dir
+
+    @property
     def signature(self) -> str:
-
         f_name = self._exec
-        # self._module_desc.get('name', 'unnamed')+'.'+'.'.join(map(str, self._rel_path))
-
-        if self._package is not None:
-            f_name = self._package.install_dir/f_name[0]
 
         if self._inputs is None:
-            args, kwargs = self._module_desc.get("inputs", ([], {}))
+            args, kwargs = self._desc.get("inputs", ([], {}))
         else:
             args, kwargs = self._inputs
 
@@ -90,6 +160,8 @@ class FyExecutor(object):
     @property
     def inputs(self):
         """
+            @deprecated
+
             Collect and convert inputs
         """
         if self._inputs is not None:
@@ -120,7 +192,11 @@ class FyExecutor(object):
         os.chdir(cwd)
         return self._inputs
 
+    @property
     def outputs(self):
+        """
+            @deprecated
+        """
         if self.outputs is not None:
             return self.outputs
         cwd = pathlib.Path.cwd()
@@ -154,48 +230,58 @@ class FyExecutor(object):
         return self.outputs
 
     def pre_process(self, *args, **kwargs):
-        return self._package.pre_load(*args, **kwargs)
+        pre_load = getattr(pre_load, 'pre_load', None)
+        if pre_load:
+            return pre_load(*args, **kwargs)
+        else:
+            return args, kwargs
 
     def post_process(self, value):
-        return self._package.post_load(value)
+        post_load = getattr(post_load, 'pre_load', None)
+        if post_load:
+            return post_load(value)
+        else:
+            return value
 
-    @property
-    def working_dir(self) -> pathlib.Path:
-        return pathlib.Path(os.getcwd())
+    def _execute(self, *args, **kwargs) -> typing.Any:
 
-    def execute(self, *args, **kwargs) -> typing.Any:
+        if not os.access(self._exec[0], os.X_OK):
+            raise RuntimeError(f"File {self._exec[0]} is not executable!")
 
-        if not isinstance(self._exec, pathlib.Path):
-            if self._package is not None:
-                exec_file = self._package.install_dir/self._exec[0]
-            else:
-                exec_file = self._exec[0]
+        cmd = [self._exec[0].as_posix(), *self._exec[1:]]
 
-            exec_file = pathlib.Path(exec_file)
-
-        if not os.access(exec_file, os.X_OK):
-            logger.warning(f"File {exec_file} is not executable!")
-
-        exec_cmd = [exec_file.as_posix(), *self._exec[1:]]
-
-        logger.info(f"Execute {' '.join(exec_cmd)}")
-
-        return None
-        error_msg = None
-
+        logger.info(f"Execute Shell command [{self._working_dir}$ {' '.join(cmd)}]")
+        # @ref: https://stackoverflow.com/questions/21953835/run-subprocess-and-print-output-to-logging
         try:
-            logger.debug(f"Execute Start: {self.metadata.annotation.label}")
-            res = self.execute(*args, **kwargs)
-            logger.debug(f"Execute Done : {self.metadata.annotation.label}")
-        except Exception as error:
-            error_msg = error
-            logger.error(f"Execute Error! {error}")
-            res = None
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                # env=self.envs,
+                shell=True,
+                cwd=self._working_dir,
+                capture_output=True,
+                check=False
+            )
+            # process_output, _ = command_line_process.communicate()
 
-        if error_msg is not None:
-            raise error_msg
+            with process.stdout as pipe:
+                for line in iter(pipe.readline, b''):  # b'\n'-separated lines
+                    logger.info(line)
 
-        return res
+            exitcode = process.wait()
+
+        except (OSError, subprocess.CalledProcessError) as error:
+            logger.error(
+                f"""Command failed! [{cmd}]
+                   STDOUT:[{error.stdout}]
+                   STDERR:[{error.stderr}]""")
+            raise error
+
+        if exitcode != 0:
+            logger.error(f"Command failed! [{cmd}]" + f"Exit code: {exitcode}")
+
+        return exitcode
 
     def _execute_module_command(self, cmd, working_dir=None):
         # py_command = self._execute_process([f"{os.environ['LMOD_CMD']}", 'python', *args])
@@ -222,38 +308,6 @@ class FyExecutor(object):
             raise RuntimeError(f"Module command failed! [module {cmd}] [exitcode: {exitcode}]")
 
         return res
-
-    def _execute_process(self, cmd, working_dir='.'):
-        # logger.debug(f"CMD: {cmd} : {res}")
-        logger.info(f"Execute Shell command [{working_dir}$ {' '.join(cmd)}]")
-        # @ref: https://stackoverflow.com/questions/21953835/run-subprocess-and-print-output-to-logging
-        try:
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                # env=self.envs,
-                shell=True,
-                cwd=working_dir
-            )
-            # process_output, _ = command_line_process.communicate()
-
-            with process.stdout as pipe:
-                for line in iter(pipe.readline, b''):  # b'\n'-separated lines
-                    logger.info(line)
-
-            exitcode = process.wait()
-
-        except (OSError, subprocess.CalledProcessError) as error:
-            logger.error(
-                f"""Command failed! [{cmd}]
-                   STDOUT:[{error.stdout}]
-                   STDERR:[{error.stderr}]""")
-            raise error
-        return exitcode
-
-    def _execute_object(self, cmd):
-        return NotImplemented
 
     def _execute_script(self, cmds):
         if cmds is None:
@@ -285,7 +339,10 @@ class FyExecutor(object):
         return res
 
     def _convert_data(self, data, metadata, envs):
+        """
+            @deprecated
 
+        """
         if metadata is None:
             metadata = {}
 
@@ -318,7 +375,7 @@ class FyExecutor(object):
         return obj
 
     def _create_dobject(self, data,  _metadata=None, *args, envs=None, **kwargs):
-
+        """ @deprecated """
         if not envs:
             envs = {}
 
@@ -378,7 +435,10 @@ class FyExecutor(object):
 
 
 class FyExecutorLocal(FyExecutor):
-    """Call subprocess/shell command
+    """
+     @deprecated 
+
+    Call subprocess/shell command
     {PKG_PREFIX}/bin/xgenray
     """
 
@@ -500,8 +560,8 @@ class FyExecutorLocal(FyExecutor):
         except (OSError, subprocess.CalledProcessError) as error:
             logger.error(
                 f"""Command failed! [{cmd}]
-                    STDOUT:[{error.stdout}]
-                    STDERR:[{error.stderr}]""")
+                    STDOUT: [{error.stdout}]
+                    STDERR: [{error.stderr}]""")
             raise error
         return exitcode
         # try:
@@ -529,6 +589,10 @@ class FyExecutorLocal(FyExecutor):
 
 
 class FyExecutorPy(FyExecutor):
+    """
+         @deprecated 
+    """
+
     def __init__(self, *args,   **kwargs):
         super().__init__(*args, **kwargs)
 

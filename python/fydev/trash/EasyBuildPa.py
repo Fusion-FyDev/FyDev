@@ -1,12 +1,20 @@
+import collections
 import os
-import pathlib
+import sys
+from pathlib import Path, PurePosixPath
+import shlex
+import subprocess
+import signal
+import traceback
+import uuid
 import re
-import typing
+import abc
 
 from spdm.util.logger import logger
 
-from ..FyPackageModule import FyPackageModule
-from ..FyPackage import FyPackage
+from ..FyRepository import FyRepository
+import .typecheck as typ
+import pprint
 
 
 class change_dir:
@@ -125,7 +133,7 @@ class BuildSystem(abc.ABC):
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    cflags = TypedField(typing.List[str])
+    cflags = TypedField(typ.List[str])
 
     #: The preprocessor flags to be used.
     #: If empty and :attr:`flags_from_environ` is :class:`True`,
@@ -134,7 +142,7 @@ class BuildSystem(abc.ABC):
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    cppflags = TypedField(typing.List[str])
+    cppflags = TypedField(typ.List[str])
 
     #: The C++ compiler flags to be used.
     #: If empty and :attr:`flags_from_environ` is :class:`True`,
@@ -143,7 +151,7 @@ class BuildSystem(abc.ABC):
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    cxxflags = TypedField(typing.List[str])
+    cxxflags = TypedField(typ.List[str])
 
     #: The Fortran compiler flags to be used.
     #: If empty and :attr:`flags_from_environ` is :class:`True`,
@@ -152,7 +160,7 @@ class BuildSystem(abc.ABC):
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    fflags = TypedField(typing.List[str])
+    fflags = TypedField(typ.List[str])
 
     #: The linker flags to be used.
     #: If empty and :attr:`flags_from_environ` is :class:`True`,
@@ -161,7 +169,7 @@ class BuildSystem(abc.ABC):
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    ldflags = TypedField(typing.List[str])
+    ldflags = TypedField(typ.List[str])
 
     #: Set compiler and compiler flags from the current programming environment
     #: if not specified otherwise.
@@ -284,13 +292,13 @@ class EasyBuild(BuildSystem):
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    easyconfigs = TypedField(typing.List[str])
+    easyconfigs = TypedField(typ.List[str])
 
     #: Options to pass to the ``eb`` command.
     #:
     #: :type: :class:`List[str]`
     #: :default: ``[]``
-    options = TypedField(typing.List[str])
+    options = TypedField(typ.List[str])
 
     #: Instruct EasyBuild to emit a package for the built software.
     #: This will essentially pass the ``--package`` option to ``eb``.
@@ -305,7 +313,7 @@ class EasyBuild(BuildSystem):
     #:
     #: :type: :class:`Dict[str, str]`
     #: :default: ``{}``
-    package_opts = TypedField(typing.Dict[str, str])
+    package_opts = TypedField(typ.Dict[str, str])
 
     #: Default prefix for the EasyBuild installation.
     #:
@@ -450,13 +458,3 @@ def test_easybuild(environ, tmp_path, **kwargs):
     test = Module(**kwargs)
     out = test._run_command(easybuild_cmd)
     print(out)
-
-
-@FyPackage.register("eb")
-class FyPackageEasyBuild(FyPackageModule):
-    """
-    A class to handle EasyBuild module files.
-    """
-
-    def install(self, install_dir: pathlib.Path = None, force=False) -> None:
-        return super().install(install_dir, force)
